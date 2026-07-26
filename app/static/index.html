@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tagicus</title>
+<link rel="icon" href="/static/logo.png" type="image/png">
+<link rel="stylesheet" href="/static/vendor/tabler-icons.min.css">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #13151e; color: #e0e4ec; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: #1a1d28; }
+::-webkit-scrollbar-thumb { background: #2a2d3a; border-radius: 4px; }
+input, button, select { font-family: inherit; }
+.header { background: linear-gradient(135deg, #2a5ba8, #4a8fe7); padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; }
+.header-logo { display: flex; align-items: center; gap: 10px; color: #fff; }
+.header-logo .name { font-size: 18px; font-weight: 500; }
+.header-logo .sub { font-size: 10px; opacity: 0.65; }
+.header-actions { display: flex; gap: 8px; }
+.btn { border: none; border-radius: 6px; padding: 6px 14px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: opacity 0.15s; }
+.btn:hover { opacity: 0.85; }
+.btn-primary { background: #4a8fe7; color: #fff; font-weight: 500; }
+.btn-secondary { background: rgba(255,255,255,0.12); color: #c0c8d8; border: 1px solid rgba(255,255,255,0.15); }
+.btn-ghost { background: transparent; color: #7a8aa8; border: 1px solid rgba(255,255,255,0.08); }
+.btn-sm { padding: 4px 10px; font-size: 11px; }
+
+.dashboard { padding: 24px; }
+.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+.stat-card { background: #1a1d28; border-radius: 8px; padding: 16px; border: 1px solid rgba(255,255,255,0.04); }
+.stat-card .label { font-size: 11px; color: #556680; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+.stat-card .value { font-size: 28px; font-weight: 500; }
+.stat-card .value.green { color: #4caf50; }
+.stat-card .value.amber { color: #f0a030; }
+.stat-card .value.red { color: #e05555; }
+.stat-card .value.blue { color: #4a8fe7; }
+
+.issue-list { background: #1a1d28; border-radius: 8px; padding: 16px; border: 1px solid rgba(255,255,255,0.04); }
+.issue-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.issue-row:last-child { border-bottom: none; }
+.issue-row .issue-label { font-size: 13px; color: #7a8aa8; }
+.issue-row .issue-count { font-size: 14px; font-weight: 500; }
+
+.filter-bar { display: flex; gap: 6px; padding: 10px 24px; background: #181b24; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.filter-btn { background: transparent; color: #3e4a60; border: 1px solid transparent; border-radius: 5px; padding: 4px 10px; font-size: 11px; cursor: pointer; display: flex; align-items: center; gap: 5px; }
+.filter-btn.active { background: rgba(74,143,231,0.12); color: #c8d4e8; border-color: rgba(74,143,231,0.2); }
+.filter-dot { width: 6px; height: 6px; border-radius: 50%; }
+
+.col-headers { display: grid; grid-template-columns: 28px 1.4fr 1fr 1fr 52px 38px 64px; padding: 6px 16px; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 10px; color: #2e3848; text-transform: uppercase; letter-spacing: 0.06em; }
+.song-row { display: grid; grid-template-columns: 28px 1.4fr 1fr 1fr 52px 38px 64px; align-items: center; padding: 9px 16px; cursor: pointer; border-left: 3px solid transparent; border-bottom: 1px solid rgba(255,255,255,0.03); transition: background 0.12s; }
+.song-row:hover { background: rgba(255,255,255,0.02); }
+.song-row.selected { background: rgba(74,143,231,0.06); border-left-color: #4a8fe7; }
+.song-title { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.song-file { font-size: 10px; color: #3e4a60; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cell { font-size: 12px; color: #7a8aa8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cell.artist { color: #b0b8c8; }
+
+.detail { background: #161922; border-top: 1px solid rgba(74,143,231,0.2); padding: 16px 24px; }
+.detail-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+.detail-title { font-size: 15px; font-weight: 500; }
+.detail-file { font-size: 11px; color: #3e4a60; margin-top: 2px; }
+.fields-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; }
+.field-row { margin-bottom: 10px; }
+.field-label { font-size: 11px; color: #556680; text-transform: uppercase; letter-spacing: 0.04em; width: 48px; display: inline-block; }
+.field-value { font-size: 13px; font-weight: 500; cursor: pointer; padding: 2px 6px; border-radius: 4px; border: 1px solid transparent; transition: border-color 0.15s; }
+.field-value:hover { border-color: rgba(74,143,231,0.3); }
+.field-input { background: #0d0f16; color: #e0e4ec; border: 1px solid #4a8fe7; border-radius: 4px; padding: 3px 8px; font-size: 13px; outline: none; width: 200px; }
+.conflict-badge { background: rgba(240,160,48,0.12); color: #f0a030; padding: 1px 7px; border-radius: 4px; font-size: 10px; margin-left: 6px; }
+.vote-row { font-size: 11px; cursor: pointer; padding: 1px 4px; border-radius: 3px; margin-left: 56px; }
+.vote-row:hover { background: rgba(255,255,255,0.04); }
+
+.filename-preview { margin-top: 12px; padding: 10px 14px; background: rgba(74,143,231,0.06); border-radius: 6px; border: 1px solid rgba(74,143,231,0.12); }
+.filename-preview .label { font-size: 10px; color: #3e4a60; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+.filename-old { color: #556680; font-size: 11px; text-decoration: line-through; }
+.filename-new { color: #4a8fe7; font-size: 11px; font-weight: 500; }
+
+.player-bar { margin-top: 12px; display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: rgba(255,255,255,0.03); border-radius: 6px; }
+.player-bar audio { flex: 1; height: 32px; }
+.player-bar audio::-webkit-media-controls-panel { background: #1a1d28; }
+
+.sources-bar { margin-top: 10px; display: flex; gap: 10px; align-items: center; font-size: 10px; }
+.source-tag { display: flex; align-items: center; gap: 3px; }
+.source-tag.inactive { opacity: 0.2; }
+
+.scan-progress { padding: 16px 24px; background: #181b24; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.progress-bar { height: 4px; background: #1a1d28; border-radius: 2px; overflow: hidden; margin-top: 8px; }
+.progress-fill { height: 100%; background: #4a8fe7; transition: width 0.3s; border-radius: 2px; }
+
+.empty { padding: 40px; text-align: center; color: #2e3848; font-size: 13px; }
+.nav-tabs { display: flex; gap: 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.nav-tab { padding: 10px 20px; font-size: 13px; color: #556680; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; }
+.nav-tab:hover { color: #7a8aa8; }
+.nav-tab.active { color: #4a8fe7; border-bottom-color: #4a8fe7; }
+
+.libs-page { padding: 24px; }
+.lib-card { background: #1a1d28; border-radius: 8px; padding: 16px; border: 1px solid rgba(255,255,255,0.04); margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+.lib-card .lib-name { font-size: 14px; font-weight: 500; }
+.lib-card .lib-path { font-size: 11px; color: #556680; margin-top: 2px; }
+.lib-card .lib-count { font-size: 12px; color: #7a8aa8; }
+.lib-actions { display: flex; gap: 6px; }
+.add-lib-form { background: #1a1d28; border-radius: 8px; padding: 16px; border: 1px solid rgba(74,143,231,0.2); margin-bottom: 16px; }
+.add-lib-form input { background: #0d0f16; color: #e0e4ec; border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 6px 10px; font-size: 13px; outline: none; width: 100%; margin-bottom: 8px; }
+.add-lib-form input:focus { border-color: #4a8fe7; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.modal { background: #1a1d28; border-radius: 10px; padding: 20px; border: 1px solid rgba(255,255,255,0.08); width: 440px; max-width: 90vw; }
+.modal-title { font-size: 15px; font-weight: 500; margin-bottom: 14px; }
+.settings-page { padding: 24px; max-width: 800px; }
+.settings-section { background: #1a1d28; border-radius: 8px; padding: 20px; border: 1px solid rgba(255,255,255,0.04); margin-bottom: 16px; }
+.settings-section-title { font-size: 14px; font-weight: 500; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+.setting-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.03); }
+.setting-row:last-child { border-bottom: none; }
+.setting-label { font-size: 13px; color: #b0b8c8; }
+.setting-desc { font-size: 11px; color: #556680; margin-top: 2px; }
+.toggle { position: relative; width: 40px; height: 22px; cursor: pointer; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-slider { position: absolute; inset: 0; background: #2a2d3a; border-radius: 11px; transition: 0.2s; }
+.toggle-slider:before { content: ""; position: absolute; height: 16px; width: 16px; left: 3px; bottom: 3px; background: #556680; border-radius: 50%; transition: 0.2s; }
+.toggle input:checked + .toggle-slider { background: rgba(74,143,231,0.3); }
+.toggle input:checked + .toggle-slider:before { transform: translateX(18px); background: #4a8fe7; }
+.pattern-input { background: #0d0f16; color: #e0e4ec; border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 6px 10px; font-size: 13px; width: 100%; outline: none; font-family: monospace; }
+.pattern-input:focus { border-color: #4a8fe7; }
+.pattern-preview { margin-top: 8px; padding: 8px 12px; background: rgba(74,143,231,0.06); border-radius: 6px; border: 1px solid rgba(74,143,231,0.12); font-size: 12px; color: #4a8fe7; font-family: monospace; }
+.pattern-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+.pattern-tag { background: #2a2d3a; color: #7a8aa8; padding: 2px 8px; border-radius: 4px; font-size: 10px; cursor: pointer; font-family: monospace; }
+.pattern-tag:hover { background: rgba(74,143,231,0.2); color: #4a8fe7; }
+.threshold-slider { width: 200px; accent-color: #4a8fe7; }
+.threshold-value { color: #4a8fe7; font-size: 13px; font-weight: 500; min-width: 40px; text-align: right; }
+.source-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; }
+.field-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px 16px; }
+.save-bar { position: sticky; bottom: 0; background: #13151e; padding: 12px 0; border-top: 1px solid rgba(255,255,255,0.06); display: flex; justify-content: flex-end; gap: 8px; }
+.tutorial-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 200; display: flex; align-items: center; justify-content: center; }
+.tutorial-card { background: #1a1d28; border-radius: 12px; padding: 24px; border: 1px solid rgba(74,143,231,0.3); max-width: 420px; width: 90vw; }
+.tutorial-title { font-size: 16px; font-weight: 500; margin-bottom: 8px; color: #e0e4ec; }
+.tutorial-text { font-size: 13px; color: #7a8aa8; line-height: 1.6; margin-bottom: 16px; }
+.tutorial-highlight { color: #4a8fe7; font-weight: 500; }
+.tutorial-steps { display: flex; gap: 4px; margin-bottom: 16px; }
+.tutorial-dot { width: 8px; height: 8px; border-radius: 50%; background: #2a2d3a; }
+.tutorial-dot.active { background: #4a8fe7; }
+.tutorial-dot.done { background: #4caf50; }
+.tutorial-actions { display: flex; justify-content: space-between; }
+
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="/static/vendor/react.production.min.js"></script>
+<script src="/static/vendor/react-dom.production.min.js"></script>
+<script src="/static/vendor/babel.min.js"></script>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const API = "";
+const SOURCES = {
+  id3_tags: { icon: "ti-tag", label: "ID3", color: "#888" },
+  filename: { icon: "ti-file", label: "File", color: "#888" },
+  acoustid: { icon: "ti-volume", label: "AcoustID", color: "#4a8fe7" },
+  musicbrainz: { icon: "ti-music", label: "MBrainz", color: "#ba478f" },
+  discogs: { icon: "ti-disc", label: "Discogs", color: "#e4a832" },
+  deezer: { icon: "ti-brand-deezer", label: "Deezer", color: "#a238ff" },
+  audiodb: { icon: "ti-database", label: "AudioDB", color: "#4fc3f7" },
+  wikidata: { icon: "ti-world", label: "Wikidata", color: "#339966" },
+  openopus: { icon: "ti-music-heart", label: "OpenOpus", color: "#d4a574" },
+  vgmdb: { icon: "ti-device-gamepad-2", label: "VGMdb", color: "#ff6b6b" },
+  vocadb: { icon: "ti-brand-vite", label: "VocaDB", color: "#ff69b4" },
+  metallum: { icon: "ti-skull", label: "Metallum", color: "#c0c0c0" },
+  lrclib: { icon: "ti-align-left", label: "LRCLIB", color: "#66bb6a" },
+};
+const FIELD_NAMES = ["artist", "title", "album", "year", "track", "genre"];
+
+function getExt(fn) { const d = fn.lastIndexOf("."); return d >= 0 ? fn.slice(d) : ""; }
+function buildNewFilename(fields, orig, settings) {
+  const ext = getExt(orig);
+  const vals = {
+    artist: fields.artist?.value || "Unknown Artist",
+    title: fields.title?.value || "Unknown",
+    album: fields.album?.value || "Unknown Album",
+    year: fields.year?.value || "Unknown Year",
+    track: fields.track?.value ? String(fields.track.value).padStart(2,"0") : "00",
+    genre: fields.genre?.value || "Unknown Genre",
+  };
+  if (!fields.artist?.value || !fields.title?.value) return null;
+  const pattern = (settings && settings.file_pattern) || "{track} - {artist} - {title}";
+  try {
+    const name = pattern.replace(/{(\w+)}/g, (m,k) => vals[k] || m);
+    return name + ext;
+  } catch(e) { return null; }
+}
+
+function EditableField({ label, field, onUpdate }) {
+  const [editing, setEditing] = useState(false);
+  const [tmp, setTmp] = useState(field?.value || "");
+  const votes = Object.entries(field?.votes || {});
+  const save = () => { if (tmp !== (field?.value || "")) onUpdate(tmp); setEditing(false); };
+  if (!field) return <div className="field-row"><span className="field-label">{label}</span><span style={{color:"#444",fontSize:13}}>unknown</span></div>;
+  return (
+    <div className="field-row">
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3}}>
+        <span className="field-label">{label}</span>
+        {editing ? (
+          <input autoFocus className="field-input" value={tmp} onChange={e=>setTmp(e.target.value)}
+            onKeyDown={e=>{if(e.key==="Enter")save();if(e.key==="Escape"){setTmp(field.value||"");setEditing(false);}}}
+            onBlur={save} />
+        ) : (
+          <span className="field-value" onClick={()=>{setTmp(field.value||"");setEditing(true);}}
+            style={{color: field.value ? "#e0e4ec" : "#444"}}>
+            {field.value || "unknown"}
+            <i className="ti ti-edit" style={{fontSize:10,marginLeft:5,color:"#444"}} />
+          </span>
+        )}
+        {field.conflict && !editing && <span className="conflict-badge">conflict</span>}
+      </div>
+      {field.conflict && !editing && votes.length > 0 && (
+        <div>{votes.map(([src,val])=>{
+          const s=SOURCES[src]||{label:src,color:"#888"};
+          const match = (val||"").toLowerCase().trim() === (field.value||"").toLowerCase().trim();
+          return <div key={src} className="vote-row" onClick={()=>onUpdate(val)}
+            style={{display:"flex",alignItems:"center",gap:5}}>
+            <span style={{color:match?"#4caf50":"#e05555",fontSize:10}}>{match?"\u2713":"\u2717"}</span>
+            <span style={{color:s.color,minWidth:44}}>{s.label}</span>
+            <span style={{color:"#7a8aa8"}}>{val}</span>
+          </div>;
+        })}</div>
+      )}
+    </div>
+  );
+}
+
+function DetailPanel({ song, onUpdate, onRescan, onApply, settings }) {
+  const f = song.fields || {};
+  const nf = buildNewFilename(f, song.filename, settings);
+  const changed = nf && nf !== song.filename;
+  return (
+    <div className="detail">
+      <div className="detail-header">
+        <div>
+          <div className="detail-title">{f.title?.value || song.filename}</div>
+          <div className="detail-file">{song.filename}</div>
+        </div>
+        <div style={{display:"flex",gap:6}}>
+          <button className="btn btn-ghost btn-sm" onClick={onRescan}>
+            <i className="ti ti-refresh" style={{fontSize:12}} /> Re-scan
+          </button>
+          <button className="btn btn-primary btn-sm" onClick={onApply}>
+            <i className="ti ti-check" style={{fontSize:12}} /> Apply tags
+          </button>
+        </div>
+      </div>
+      <div className="fields-grid">
+        {FIELD_NAMES.map(fn => <EditableField key={fn} label={fn} field={f[fn]} onUpdate={val=>onUpdate(fn,val)} />)}
+      </div>
+      <div className="player-bar">
+        <i className="ti ti-headphones" style={{color:"#556680",fontSize:16}} />
+        <audio controls preload="none" src={`${API}/api/audio/${song.id}`} style={{flex:1,height:32}} />
+      </div>
+      {changed && song.status !== "done" && (
+        <div className="filename-preview">
+          <div className="label">Filename preview</div>
+          <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+            <span className="filename-old">{song.filename}</span>
+            <i className="ti ti-arrow-right" style={{color:"#3e4a60",fontSize:11}} />
+            <span className="filename-new">{nf}</span>
+          </div>
+        </div>
+      )}
+      <div className="sources-bar">
+        <span style={{color:"#2e3848"}}>Sources:</span>
+        {Object.entries(SOURCES).map(([k,s])=>{
+          const has = Object.values(f).some(fld=>fld?.votes?.[k]);
+          return <span key={k} className={`source-tag ${has?"":"inactive"}`} style={{color:s.color}}>
+            <i className={`ti ${s.icon}`} style={{fontSize:11}} /> {s.label}
+          </span>;
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SongRow({ song, isSelected, onClick }) {
+  const f = song.fields || {};
+  let sc="#4caf50", si="ti-circle-check";
+  if (song.status==="needs_attention"){sc="#e05555";si="ti-alert-circle";}
+  else if (song.status==="review"){sc="#f0a030";si="ti-alert-triangle";}
+  else if (song.status==="done"){sc="#4a8fe7";si="ti-circle-check";}
+  return (
+    <div className={`song-row ${isSelected?"selected":""}`} onClick={onClick}>
+      <i className={`ti ${si}`} style={{color:sc,fontSize:14}} />
+      <div style={{overflow:"hidden"}}>
+        <div className="song-title">{f.title?.value || song.filename}</div>
+        <div className="song-file">{song.filename}</div>
+      </div>
+      <span className="cell artist">{f.artist?.value || "\u2014"}</span>
+      <span className="cell">{f.album?.value || "\u2014"}</span>
+      <span className="cell" style={{textAlign:"center"}}>{f.year?.value || "\u2014"}</span>
+      <span className="cell" style={{textAlign:"center"}}>{f.track?.value || "\u2014"}</span>
+      <span className="cell" style={{textAlign:"center",fontSize:11}}>{f.genre?.value || "\u2014"}</span>
+    </div>
+  );
+}
+
+function DuplicatesView() {
+  const [dupes, setDupes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetch("/api/duplicates").then(r=>r.json()).then(d=>{setDupes(d);setLoading(false);}).catch(()=>setLoading(false));
+  }, []);
+  if (loading) return <div className="empty">Checking for duplicates...</div>;
+  if (dupes.length === 0) return <div className="empty">No duplicates found</div>;
+  return (
+    <div className="libs-page">
+      <div style={{fontSize:16,fontWeight:500,marginBottom:16}}>Duplicates ({dupes.length} groups)</div>
+      {dupes.map((d, i) => (
+        <div key={i} className="lib-card" style={{flexDirection:"column",alignItems:"stretch"}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+            <div>
+              <div className="lib-name">{d.title}</div>
+              <div className="lib-path">{d.artist}</div>
+            </div>
+            <span style={{color:"#f0a030",fontSize:13,fontWeight:500}}>{d.count} copies</span>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            {d.filenames.map((fn, j) => (
+              <div key={j} style={{fontSize:11,color:"#7a8aa8",padding:"4px 8px",background:"rgba(255,255,255,0.02)",borderRadius:4,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span>{fn}</span>
+                <div style={{display:"flex",gap:4}}>
+                  <button className="btn btn-ghost btn-sm" style={{color:"#e05555",padding:"2px 8px",fontSize:10}} onClick={async(e)=>{e.stopPropagation();if(confirm("Delete "+fn+"? This removes the file permanently.")){await fetch("/api/songs/"+d.song_ids[j],{method:"DELETE"});setDupes(dupes.filter((_,idx)=>idx!==i).concat(d.count>2?[{...d,count:d.count-1,song_ids:d.song_ids.filter((_,idx2)=>idx2!==j),filenames:d.filenames.filter((_,idx2)=>idx2!==j)}]:[]));}}}>
+                    <i className="ti ti-trash" style={{fontSize:11}} /> Remove
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SettingsPage() {
+  const [settings, setSettings] = useState(null);
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [preview, setPreview] = useState("");
+
+  useEffect(() => {
+    fetch("/api/settings").then(r=>r.json()).then(d=>{setSettings(d);updatePreview(d);});
+  }, []);
+
+  const update = (key, value) => {
+    const next = {...settings, [key]: String(value)};
+    setSettings(next);
+    setDirty(true);
+    if (key === "folder_pattern" || key === "file_pattern") {
+      updatePreview(next);
+    }
+  };
+
+  const updatePreview = (s) => {
+    const sample = {artist:"Frank Sinatra",title:"My Way",album:"My Way",year:"1969",track:"01",genre:"Jazz"};
+    try {
+      const folder = (s.folder_pattern||"").replace(/{(\w+)}/g, (m,k) => sample[k]||m);
+      const file = (s.file_pattern||"").replace(/{(\w+)}/g, (m,k) => sample[k]||m);
+      setPreview(folder + "/" + file + ".mp3");
+    } catch(e) { setPreview("Invalid pattern"); }
+  };
+
+  const save = async () => {
+    setSaving(true);
+    await fetch("/api/settings", {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(settings)});
+    setDirty(false);
+    setSaving(false);
+  };
+
+  const insertTag = (field, tag) => {
+    update(field, (settings[field]||"") + `{${tag}}`);
+  };
+
+  if (!settings) return <div className="empty">Loading settings...</div>;
+
+  const Toggle = ({k, label, desc}) => (
+    <div className="setting-row">
+      <div><div className="setting-label">{label}</div>{desc && <div className="setting-desc">{desc}</div>}</div>
+      <label className="toggle"><input type="checkbox" checked={settings[k]==="true"} onChange={e=>update(k,e.target.checked?"true":"false")} /><span className="toggle-slider" /></label>
+    </div>
+  );
+
+  const tags = ["artist","title","album","year","track","genre"];
+
+  return (
+    <div className="settings-page">
+      <div style={{fontSize:18,fontWeight:500,marginBottom:20}}>Settings</div>
+
+      <div className="settings-section">
+        <div className="settings-section-title"><i className="ti ti-folder" style={{color:"#4a8fe7"}} /> File Organization</div>
+        <Toggle k="organize_enabled" label="Organize files after writing tags" desc="Move files into folder structure based on metadata" />
+        <div className="setting-row" style={{flexDirection:"column",alignItems:"stretch",gap:8}}>
+          <div className="setting-label">Folder pattern</div>
+          <input className="pattern-input" value={settings.folder_pattern||""} onChange={e=>update("folder_pattern",e.target.value)} />
+          <div className="pattern-tags">
+            {tags.map(t=><span key={t} className="pattern-tag" onClick={()=>insertTag("folder_pattern",t)}>{`{${t}}`}</span>)}
+          </div>
+        </div>
+        <div className="setting-row" style={{flexDirection:"column",alignItems:"stretch",gap:8}}>
+          <div className="setting-label">File naming pattern</div>
+          <input className="pattern-input" value={settings.file_pattern||""} onChange={e=>update("file_pattern",e.target.value)} />
+          <div className="pattern-tags">
+            {tags.map(t=><span key={t} className="pattern-tag" onClick={()=>insertTag("file_pattern",t)}>{`{${t}}`}</span>)}
+          </div>
+        </div>
+        <div className="pattern-preview">
+          <span style={{color:"#556680",fontSize:10,textTransform:"uppercase",letterSpacing:"0.04em"}}>Preview: </span>
+          {preview}
+        </div>
+        <Toggle k="cleanup_empty_folders" label="Clean up empty folders" desc="Remove empty directories after moving files" />
+      </div>
+
+      <div className="settings-section">
+        <div className="settings-section-title"><i className="ti ti-adjustments" style={{color:"#f0a030"}} /> Scan Confidence</div>
+        <div className="setting-row">
+          <div>
+            <div className="setting-label">Review threshold</div>
+            <div className="setting-desc">Songs with artist/title agreement below this go to Review instead of Approved</div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <input type="range" className="threshold-slider" min="0.1" max="0.8" step="0.05"
+              value={settings.review_threshold||"0.35"}
+              onChange={e=>update("review_threshold",e.target.value)} />
+            <span className="threshold-value">{Math.round((settings.review_threshold||0.35)*100)}%</span>
+          </div>
+        </div>
+        <div style={{marginTop:12}}>
+          <div className="setting-label" style={{marginBottom:4}}>Data Sources</div>
+          <div className="setting-desc" style={{marginBottom:12}}>Choose which databases Tagicus queries. More sources = better accuracy but slower scans. Sources are grouped by privacy level.</div>
+
+
+          <div style={{background:"rgba(76,175,80,0.06)",border:"1px solid rgba(76,175,80,0.15)",borderRadius:8,padding:14,marginBottom:10}}>
+            <div style={{fontSize:13,fontWeight:500,color:"#4caf50",marginBottom:4,display:"flex",alignItems:"center",gap:6}}><i className="ti ti-shield-check" style={{fontSize:15}} /> Tier 1 — Full Privacy</div>
+            <div style={{fontSize:11,color:"#7a8aa8",marginBottom:10}}>These sources stay on your device or use fully open databases. Nothing about your music is shared with anyone.</div>
+            <div className="source-grid">
+              <Toggle k="source_musicbrainz" label="MusicBrainz" desc="Open music database (used by Picard and Beets)" />
+              <Toggle k="source_wikidata" label="Wikidata" desc="Fact verification (Wikimedia Foundation)" />
+              <Toggle k="source_audiodb" label="TheAudioDB" desc="Community metadata and artwork" />
+              <Toggle k="source_lrclib" label="LRCLIB" desc="Open lyrics database (plain and synced)" />
+              <Toggle k="source_openopus" label="Open Opus" desc="Classical and orchestral music" />
+              <Toggle k="source_vocadb" label="VocaDB" desc="Vocaloid and Japanese music" />
+            </div>
+          </div>
+          <div style={{background:"rgba(240,160,48,0.06)",border:"1px solid rgba(240,160,48,0.15)",borderRadius:8,padding:14,marginBottom:10}}>
+            <div style={{fontSize:13,fontWeight:500,color:"#f0a030",marginBottom:4,display:"flex",alignItems:"center",gap:6}}><i className="ti ti-shield" style={{fontSize:15}} /> Tier 2 — Semi-Private</div>
+            <div style={{fontSize:11,color:"#7a8aa8",marginBottom:10}}>These services can see what songs you search for, but they are community-run and do not sell your data. Most free music taggers use these same services.</div>
+            <div className="source-grid">
+              <Toggle k="source_acoustid" label="AcoustID" desc="Audio fingerprinting (used by Picard alongside MusicBrainz)" />
+              <Toggle k="source_discogs" label="Discogs" desc="Release database (used by DJ apps, vinyl collectors)" />
+              <Toggle k="source_vgmdb" label="VGMdb" desc="Video game and anime soundtracks" />
+              <Toggle k="source_metallum" label="Metallum" desc="Metal (Encyclopaedia Metallum)" />
+            </div>
+          </div>
+          <div style={{background:"rgba(224,85,85,0.06)",border:"1px solid rgba(224,85,85,0.15)",borderRadius:8,padding:14}}>
+            <div style={{fontSize:13,fontWeight:500,color:"#e05555",marginBottom:4,display:"flex",alignItems:"center",gap:6}}><i className="ti ti-shield-off" style={{fontSize:15}} /> Tier 3 — Less Private</div>
+            <div style={{fontSize:11,color:"#7a8aa8",marginBottom:10}}>These are commercial companies. They can see your searches and may log your IP address and activity. Better coverage, less privacy.</div>
+            <div className="source-grid">
+              <Toggle k="source_deezer" label="Deezer" desc="Commercial catalog (90M+ tracks)" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="settings-section">
+        <div className="settings-section-title"><i className="ti ti-writing" style={{color:"#4caf50"}} /> Tag Writing</div>
+        <Toggle k="clear_tags" label="Clear existing tags before writing" desc="Removes spam/junk but preserves artwork and lyrics (if enabled below)" />
+        <Toggle k="preserve_artwork" label="Preserve embedded artwork" desc="Save and restore album art when clearing tags" />
+        <Toggle k="preserve_lyrics" label="Preserve embedded lyrics" desc="Save and restore lyrics when clearing tags" />
+        <Toggle k="remove_id3_from_flac" label="Remove ID3 tags from FLAC files" desc="FLAC should use Vorbis comments only" />
+        <Toggle k="remove_apev2_from_mp3" label="Remove APEv2 tags from MP3 files" desc="MP3 should use ID3 only" />
+        <Toggle k="fetch_lyrics" label="Fetch and embed lyrics" desc="Search LRCLIB for lyrics and embed them in the file" />
+        <Toggle k="prefer_synced_lyrics" label="Prefer synced lyrics" desc="Use timestamped lyrics when available (for karaoke-style display)" />
+        <div style={{marginTop:12}}>
+          <div className="setting-label" style={{marginBottom:8}}>Fields to write</div>
+          <div className="field-grid">
+            <Toggle k="write_artist" label="Artist" />
+            <Toggle k="write_title" label="Title" />
+            <Toggle k="write_album" label="Album" />
+            <Toggle k="write_year" label="Year" />
+            <Toggle k="write_track" label="Track" />
+            <Toggle k="write_genre" label="Genre" />
+          </div>
+        </div>
+      </div>
+
+      {dirty && (
+        <div className="save-bar">
+          <button className="btn btn-ghost" onClick={()=>{fetch("/api/settings").then(r=>r.json()).then(d=>{setSettings(d);setDirty(false);updatePreview(d);});}}>Discard</button>
+          <button className="btn btn-primary" onClick={save} disabled={saving}>
+            <i className="ti ti-check" style={{fontSize:13}} /> {saving ? "Saving..." : "Save settings"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// <!--start function Tutorial -->
+
+function Tutorial({ onComplete, setView }) {
+  const [step, setStep] = useState(0);
+
+  const steps = [
+    { tab: "libraries", title: "Add Your Music", text: "Start here. Point Tagicus to the folder where your music lives. You can add multiple folders.", icon: "ti-folder-cog", iconColor: "#4a8fe7" },
+    { tab: "dashboard", title: "Scan Your Library", text: "Hit the Scan button up top. Tagicus checks multiple databases to identify each song by its audio fingerprint and metadata.", icon: "ti-folder-search", iconColor: "#4a8fe7" },
+    { tab: "library", title: "Review Results", text: "Your songs show up here. Green is confident, yellow needs a look. Click any song to see details, listen, and edit.", icon: "ti-list", iconColor: "#4caf50" },
+    { tab: "settings", title: "Privacy and Sources", text: "Your sources start at a balanced default. Adjust privacy here — each tier shows exactly what data is shared. Turn on genre specialists if you need them.", icon: "ti-shield-check", iconColor: "#4caf50" },
+    { tab: "dashboard", title: "Write Tags", text: "Once songs are reviewed, the Write Tags button appears. It writes correct metadata into your files and organizes them into clean folders. You're all set.", icon: "ti-check", iconColor: "#4caf50" },
+  ];
+
+  useEffect(() => {
+    setView(steps[step].tab);
+  }, [step]);
+
+  const s = steps[step];
+  const isLast = step === steps.length - 1;
+
+  return (
+    <div style={{position:"fixed",bottom:20,right:20,zIndex:200,width:340,background:"#1a1d28",borderRadius:10,padding:16,border:"1px solid rgba(74,143,231,0.3)",boxShadow:"0 8px 32px rgba(0,0,0,0.5)"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+        <i className={`ti ${s.icon}`} style={{fontSize:20,color:s.iconColor}} />
+        <div style={{fontSize:14,fontWeight:500,color:"#e0e4ec",flex:1}}>{s.title}</div>
+        <span style={{fontSize:10,color:"#556680"}}>{step+1}/{steps.length}</span>
+      </div>
+      <div style={{fontSize:12,color:"#7a8aa8",lineHeight:1.6,marginBottom:12}}>{s.text}</div>
+      <div style={{display:"flex",gap:4,marginBottom:12}}>
+        {steps.map((_,i) => (
+          <div key={i} style={{flex:1,height:3,borderRadius:2,background:i<=step?"#4a8fe7":"#2a2d3a"}} />
+        ))}
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between"}}>
+        <button className="btn btn-ghost btn-sm" onClick={onComplete}>Skip</button>
+        <div style={{display:"flex",gap:6}}>
+          {step > 0 && <button className="btn btn-ghost btn-sm" onClick={()=>setStep(step-1)}>Back</button>}
+          <button className="btn btn-primary btn-sm" onClick={()=>{if(isLast){onComplete();}else{setStep(step+1);}}}>
+            {isLast ? "Done" : "Next"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+// <!--end function Tutorial -->
+
+function App() {
+  const [view, setView] = useState("dashboard");
+  const [songs, setSongs] = useState([]);
+  const [stats, setStats] = useState({});
+  const [selected, setSelected] = useState(null);
+  const [filter, setFilter] = useState("all");
+  const [scanning, setScanning] = useState(false);
+  const [scanProg, setScanProg] = useState({total:0,scanned:0,current:""});
+  const [libraries, setLibraries] = useState([]);
+  const [showScanModal, setShowScanModal] = useState(false);
+  const [showAddLib, setShowAddLib] = useState(false);
+  const [newLibName, setNewLibName] = useState("");
+  const [newLibPath, setNewLibPath] = useState("");
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [appSettings, setAppSettings] = useState({});
+
+  const loadLibraries = useCallback(async () => {
+    try {
+      const r = await fetch(`${API}/api/libraries`);
+      setLibraries(await r.json());
+    } catch(e) { console.error(e); }
+  }, []);
+
+  const loadSongs = useCallback(async () => {
+    try {
+      const r = await fetch(`${API}/api/songs`);
+      const data = await r.json();
+      setSongs(data);
+    } catch(e) { console.error(e); }
+  }, []);
+
+  const loadStats = useCallback(async () => {
+    try {
+      const r = await fetch(`${API}/api/stats`);
+      const data = await r.json();
+      setStats(data);
+      if (data.scan_running) {
+        setScanning(true);
+        setScanProg(data.scan_progress);
+      } else if (scanning) {
+        setScanning(false);
+        loadSongs(); loadStats();
+      }
+    } catch(e) { console.error(e); }
+  }, [scanning, loadSongs]);
+
+  useEffect(() => { loadStats(); loadSongs(); loadLibraries(); fetch("/api/settings").then(r=>r.json()).then(d=>{ setAppSettings(d); setShowTutorial(d.tutorial_done !== "true"); }).catch(()=>{}); }, []);
+  useEffect(() => {
+    const iv = setInterval(loadStats, scanning ? 2000 : 15000);
+    return () => clearInterval(iv);
+  }, [scanning, loadStats]);
+
+  const chooseFolder = async () => {
+    if (!window.pywebview) {
+      alert("Native folder picker isn't available in this environment.");
+      return;
+    }
+    try {
+      const result = await window.pywebview.api.choose_folder();
+      if (result) {
+        setNewLibPath(result);
+        if (!newLibName.trim()) {
+          const base = result.replace(/[\\/]+$/, "").split(/[\\/]/).pop();
+          setNewLibName(base || "");
+        }
+      }
+    } catch(e) { console.error(e); }
+  };
+
+  const addLibrary = async () => {
+    if (!newLibName.trim() || !newLibPath.trim()) return;
+    try {
+      const r = await fetch(`${API}/api/libraries`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:newLibName,path:newLibPath})});
+      if (r.ok) {
+        setShowAddLib(false); setNewLibName(""); setNewLibPath("");
+        loadLibraries();
+      } else {
+        const err = await r.json();
+        alert(err.detail || "Failed to add library");
+      }
+    } catch(e) { console.error(e); }
+  };
+
+  const deleteLibrary = async (id) => {
+    if (!confirm("Remove this library and all its scan data?")) return;
+    try {
+      await fetch(`${API}/api/libraries/${id}`, {method:"DELETE"});
+      loadLibraries(); loadSongs(); loadStats();
+    } catch(e) { console.error(e); }
+  };
+
+  const startScan = async (path, fullRescan) => {
+    try {
+      await fetch(`${API}/api/scan`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({path, full_rescan: fullRescan || false})});
+      setScanning(true);
+      setShowScanModal(false);
+    } catch(e) { console.error(e); }
+  };
+
+  const updateField = async (songId, field, value) => {
+    try {
+      await fetch(`${API}/api/songs/${songId}/fields/${field}`, {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({value})});
+      loadSongs();
+    } catch(e) { console.error(e); }
+  };
+
+  const rescan = async (songId) => {
+    try {
+      await fetch(`${API}/api/songs/${songId}/rescan`, {method:"POST"});
+      loadSongs();
+    } catch(e) { console.error(e); }
+  };
+
+  const applyTags = async (songId) => {
+    try {
+      await fetch(`${API}/api/songs/${songId}/apply`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({})});
+      loadSongs(); loadStats();
+    } catch(e) { console.error(e); }
+  };
+
+  const applyBatch = async () => {
+    try {
+      await fetch(`${API}/api/apply-batch`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({})});
+      loadSongs(); loadStats();
+    } catch(e) { console.error(e); }
+  };
+
+  const filtered = songs.filter(s => filter === "all" ? true : s.status === filter);
+  const counts = {all: songs.length, ready: songs.filter(s=>s.status==="ready").length, review: songs.filter(s=>s.status==="review").length, needs_attention: songs.filter(s=>s.status==="needs_attention").length, done: songs.filter(s=>s.status==="done").length};
+  const filters = [{key:"all",label:"All",color:"#7a8aa8"},{key:"needs_attention",label:"Needs attention",color:"#e05555"},{key:"review",label:"Review",color:"#f0a030"},{key:"ready",label:"Ready",color:"#4caf50"},{key:"done",label:"Done",color:"#4a8fe7"}];
+
+  return (
+    <div>
+      {showTutorial && <Tutorial setView={setView} onComplete={() => { setShowTutorial(false); fetch("/api/settings", {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({tutorial_done:"true"})}).catch(()=>{}); }} />}
+      <div className="header">
+        <div className="header-logo">
+          <img src="/static/logo.png" style={{width:28,height:28}} alt="Tagicus" />
+          <div><div className="name">Tagicus</div><div className="sub">music metadata detective</div></div>
+        </div>
+        <div className="header-actions">
+          <button className="btn btn-secondary" onClick={()=>{if(libraries.length>0)setShowScanModal(true);else{setView("libraries");setShowAddLib(true);browsePath("/");}}} disabled={scanning}>
+            <i className="ti ti-folder-search" style={{fontSize:14}} /> {scanning ? "Scanning..." : "Scan"}
+          </button>
+          {counts.ready > 0 && <button className="btn btn-primary" onClick={applyBatch}>
+            <i className="ti ti-checks" style={{fontSize:14}} /> Write Tags ({counts.ready})
+          </button>}
+          <button className="btn btn-ghost btn-sm" style={{color:"rgba(255,255,255,0.5)",padding:"4px 8px"}} onClick={()=>{setShowTutorial(true);fetch("/api/settings", {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({tutorial_done:"false"})}).catch(()=>{});}}>
+            <i className="ti ti-help" style={{fontSize:14}} />
+          </button>
+        </div>
+      </div>
+
+      <div className="nav-tabs">
+        <div className={`nav-tab ${view==="dashboard"?"active":""}`} onClick={()=>setView("dashboard")}>
+          <i className="ti ti-dashboard" style={{fontSize:14,marginRight:4}} /> Dashboard
+        </div>
+        <div className={`nav-tab ${view==="library"?"active":""}`} onClick={()=>setView("library")}>
+          <i className="ti ti-list" style={{fontSize:14,marginRight:4}} /> Library
+        </div>
+        <div className={`nav-tab ${view==="libraries"?"active":""}`} onClick={()=>{setView("libraries");loadLibraries();}}>
+          <i className="ti ti-folder-cog" style={{fontSize:14,marginRight:4}} /> Sources
+        </div>
+
+        <div className={`nav-tab ${view==="duplicates"?"active":""}`} onClick={()=>setView("duplicates")}>
+          <i className="ti ti-copy" style={{fontSize:14,marginRight:4}} /> Duplicates
+        </div>
+        <div className={`nav-tab ${view==="settings"?"active":""}`} onClick={()=>setView("settings")}>
+          <i className="ti ti-settings" style={{fontSize:14,marginRight:4}} /> Settings
+        </div>
+      </div>
+
+      {/* Scan Modal */}
+      {showScanModal && (
+        <div className="modal-overlay" onClick={()=>setShowScanModal(false)}>
+          <div className="modal" onClick={e=>e.stopPropagation()}>
+            <div className="modal-title">Select library to scan</div>
+            {libraries.map(lib => (
+              <div key={lib.id} className="lib-card">
+                <div>
+                  <div className="lib-name"><i className="ti ti-folder" style={{marginRight:6,color:"#4a8fe7"}} />{lib.name}</div>
+                  <div className="lib-path">{lib.path}</div>
+                </div>
+                <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  <span className="lib-count" style={{marginRight:4}}>{lib.song_count} files</span>
+                  <button className="btn btn-primary btn-sm" onClick={()=>startScan(lib.path,false)}>Scan new</button>
+                  <button className="btn btn-ghost btn-sm" onClick={()=>startScan(lib.path,true)}>Full rescan</button>
+                </div>
+              </div>
+            ))}
+            <div style={{marginTop:10,borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <button className="btn btn-ghost btn-sm" onClick={()=>{setShowScanModal(false);setView("libraries");setShowAddLib(true);browsePath("/");}}>
+                <i className="ti ti-plus" style={{fontSize:12}} /> Add new source
+              </button>
+              <div style={{display:"flex",gap:6}}>
+                <button className="btn btn-ghost btn-sm" onClick={()=>setShowScanModal(false)}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {scanning && (
+        <div className="scan-progress">
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:12}}>
+            <span style={{color:"#7a8aa8"}}>Scanning: <span style={{color:"#e0e4ec"}}>{scanProg.current}</span></span>
+            <span style={{display:"flex",alignItems:"center",gap:8}}><span style={{color:"#556680"}}>{scanProg.scanned} / {scanProg.total}</span><button className="btn btn-ghost btn-sm" style={{color:"#e05555",padding:"2px 8px"}} onClick={async()=>{await fetch("/api/scan/cancel",{method:"POST"});}}>Stop</button></span>
+          </div>
+          <div className="progress-bar"><div className="progress-fill" style={{width:`${scanProg.total?Math.round(scanProg.scanned/scanProg.total*100):0}%`}} /></div>
+        </div>
+      )}
+
+      {view === "dashboard" && (
+        <div className="dashboard">
+          <div className="stats-grid">
+            <div className="stat-card"><div className="label">Total files</div><div className="value blue">{stats.total || 0}</div></div>
+            <div className="stat-card"><div className="label">Healthy</div><div className="value green">{stats.healthy || 0}</div></div>
+            <div className="stat-card"><div className="label">Need review</div><div className="value amber">{stats.review || 0}</div></div>
+            <div className="stat-card"><div className="label">Need attention</div><div className="value red">{stats.needs_attention || 0}</div></div>
+          </div>
+          <div className="issue-list">
+            <div style={{fontSize:14,fontWeight:500,marginBottom:12}}>Issues</div>
+            <div className="issue-row"><span className="issue-label"><i className="ti ti-photo-off" style={{marginRight:6,fontSize:14}} /> Missing artwork</span><span className="issue-count amber">{stats.missing_artwork || 0}</span></div>
+            <div className="issue-row"><span className="issue-label"><i className="ti ti-alert-triangle" style={{marginRight:6,fontSize:14}} /> Metadata conflicts</span><span className="issue-count amber">{stats.conflicts || 0}</span></div>
+            <div className="issue-row"><span className="issue-label"><i className="ti ti-alert-circle" style={{marginRight:6,fontSize:14}} /> Unidentified files</span><span className="issue-count red">{stats.needs_attention || 0}</span></div>
+          </div>
+          <div style={{marginTop:16,display:"flex",gap:8}}>
+            <button className="btn btn-secondary" onClick={()=>{setView("library");setFilter("review");}}>
+              <i className="ti ti-eye" style={{fontSize:13}} /> Review issues
+            </button>
+            {counts.ready > 0 && <button className="btn btn-primary" onClick={applyBatch}>
+              <i className="ti ti-checks" style={{fontSize:13}} /> Write Tags to Approved ({counts.ready})
+            </button>}
+          </div>
+        </div>
+      )}
+
+      {view === "library" && (
+        <div>
+          <div className="filter-bar">
+            {filters.map(f => (
+              <button key={f.key} className={`filter-btn ${filter===f.key?"active":""}`} onClick={()=>setFilter(f.key)}>
+                <span className="filter-dot" style={{background:f.color,opacity:filter===f.key?1:0.35}} />
+                {f.label}
+                <span style={{color:filter===f.key?"#556680":"#2e3848",fontSize:10}}>{counts[f.key]||0}</span>
+              </button>
+            ))}
+          </div>
+          <div className="col-headers">
+            <span /><span>Title / file</span><span>Artist</span><span>Album</span>
+            <span style={{textAlign:"center"}}>Year</span><span style={{textAlign:"center"}}>Trk</span><span style={{textAlign:"center"}}>Genre</span>
+          </div>
+          <div>
+            {filtered.map(song => (
+              <div key={song.id}>
+                <SongRow song={song} isSelected={selected===song.id} onClick={()=>setSelected(selected===song.id?null:song.id)} />
+                {selected===song.id && <DetailPanel song={song} settings={appSettings}
+                  onUpdate={(f,v)=>updateField(song.id,f,v)}
+                  onRescan={()=>rescan(song.id)}
+                  onApply={()=>applyTags(song.id)} />}
+              </div>
+            ))}
+          </div>
+          {filtered.length===0 && <div className="empty">{songs.length===0?"No files scanned yet. Add a source and hit Scan to get started.":"No files match this filter."}</div>}
+        </div>
+      )}
+
+      {view === "libraries" && (
+        <div className="libs-page">
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+            <div style={{fontSize:16,fontWeight:500}}>Music Sources</div>
+            <button className="btn btn-primary btn-sm" onClick={()=>setShowAddLib(true)}>
+              <i className="ti ti-plus" style={{fontSize:13}} /> Add source
+            </button>
+          </div>
+
+          {showAddLib && (
+            <div className="add-lib-form">
+              <div style={{fontSize:13,fontWeight:500,marginBottom:10}}>Add music source</div>
+              <input placeholder="Name (e.g. Main Library, Game OSTs, Work Music)" value={newLibName} onChange={e=>setNewLibName(e.target.value)} />
+              <div style={{display:"flex",gap:6}}>
+                <input style={{flex:1}} placeholder="No folder selected" value={newLibPath} onChange={e=>setNewLibPath(e.target.value)} />
+                <button className="btn btn-secondary btn-sm" onClick={chooseFolder}>
+                  <i className="ti ti-folder-open" style={{fontSize:13}} /> Choose folder…
+                </button>
+              </div>
+              <div style={{display:"flex",gap:6,marginTop:4}}>
+                <button className="btn btn-primary btn-sm" onClick={addLibrary}>Add source</button>
+                <button className="btn btn-ghost btn-sm" onClick={()=>setShowAddLib(false)}>Cancel</button>
+              </div>
+            </div>
+          )}
+
+          {libraries.length === 0 && !showAddLib && (
+            <div className="empty">
+              No music sources configured yet.<br/>
+              Add a source to tell Tagicus where your music lives.
+            </div>
+          )}
+
+          {libraries.map(lib => (
+            <div key={lib.id} className="lib-card">
+              <div>
+                <div className="lib-name"><i className="ti ti-folder" style={{marginRight:6,color:"#4a8fe7"}} />{lib.name}</div>
+                <div className="lib-path">{lib.path}</div>
+              </div>
+              <div className="lib-actions">
+                <span className="lib-count" style={{marginRight:8}}>{lib.song_count} files</span>
+                <button className="btn btn-secondary btn-sm" onClick={()=>startScan(lib.path,false)} disabled={scanning}>
+                  <i className="ti ti-scan" style={{fontSize:12}} /> Scan
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={()=>deleteLibrary(lib.id)} style={{color:"#e05555"}}>
+                  <i className="ti ti-trash" style={{fontSize:12}} />
+                </button>
+              </div>
+            </div>
+          ))}
+
+        </div>
+      )}
+        {view === "duplicates" && <DuplicatesView />}
+        {view === "settings" && <SettingsPage />}
+
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

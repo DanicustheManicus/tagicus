@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Tagicus
+Comment=Music metadata detective
+Exec=Tagicus
+Icon=tagicus
+Categories=AudioVideo;Audio;
+Terminal=false
+StartupWMClass=Tagicus
