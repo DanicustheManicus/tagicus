@@ -3,11 +3,13 @@
 # Run tagicus.spec first so dist/Tagicus exists.
 set -euo pipefail
 
+VERSION="0.1.0"
+
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DIST_EXE="$PROJECT_ROOT/dist/Tagicus"
 APPDIR="$PROJECT_ROOT/build/AppDir"
 APPIMAGETOOL="$PROJECT_ROOT/build/appimagetool-x86_64.AppImage"
-OUT="$PROJECT_ROOT/dist/Tagicus-x86_64.AppImage"
+OUT="$PROJECT_ROOT/dist/Tagicus-$VERSION-x86_64.AppImage"
 
 if [ ! -f "$DIST_EXE" ]; then
     echo "error: $DIST_EXE not found - run 'pyinstaller tagicus.spec' first" >&2
