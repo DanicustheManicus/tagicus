@@ -1,5 +1,7 @@
 # Tagicus — Music Metadata Detective
 
+**A Picard/Mp3tag alternative that double-checks itself** — cross-references multiple sources instead of trusting just one.
+
 ## Why It Exists
 
 Every music metadata tool trusts one source and hopes for the best. Picard relies on audio fingerprinting. Mp3tag relies on what you type. When their one source is wrong, your tags are wrong, and you don't even know it.
