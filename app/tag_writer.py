@@ -18,6 +18,7 @@ from mutagen.flac import FLAC
 from mutagen.id3 import ID3, TIT2, TPE1, TALB, TDRC, TRCK, TCON, APIC
 from mutagen.apev2 import APEv2
 import database as db
+import paths
 
 
 def apply_tags(song_id, organize=None, base_path=None):
@@ -26,7 +27,7 @@ def apply_tags(song_id, organize=None, base_path=None):
         return {"error": "Song not found"}
 
     filepath = song["filepath"]
-    if not os.path.exists(filepath):
+    if not os.path.exists(paths.long_path(filepath)):
         return {"error": f"File not found: {filepath}"}
 
     fields = song["fields"]
@@ -60,23 +61,30 @@ def apply_tags(song_id, organize=None, base_path=None):
     }
 
     try:
+        safe_filepath = paths.long_path(filepath)
         if ext == ".mp3":
-            _write_mp3(filepath, write, settings)
+            _write_mp3(safe_filepath, write, settings)
         elif ext in (".m4a", ".mp4", ".aac"):
-            _write_mp4(filepath, write, settings)
+            _write_mp4(safe_filepath, write, settings)
         elif ext == ".flac":
-            _write_flac(filepath, write, settings)
+            _write_flac(safe_filepath, write, settings)
         else:
-            _write_generic(filepath, write, settings)
+            _write_generic(safe_filepath, write, settings)
     except Exception as e:
         return {"error": f"Failed to write tags: {e}"}
 
     new_path = filepath
     if organize and base_path:
-        new_path = _organize_file(
-            filepath, artist, title, album, year, track, ext,
-            base_path, settings
-        )
+        try:
+            new_path = _organize_file(
+                filepath, artist, title, album, year, track, ext,
+                base_path, settings
+            )
+        except Exception as e:
+            # Tags were already written above even though the move failed,
+            # so surface this distinctly rather than pretending nothing happened.
+            return {"error": f"Tags written, but failed to move/rename file: {e}"}
+        db.mark_organized(song_id)
 
     if new_path != filepath:
         db.update_filepath(song_id, new_path)
@@ -157,8 +165,9 @@ def _write_mp3(filepath, write, settings):
         tags.add(TRCK(encoding=3, text=[str(write["track"])]))
     if write["genre"]:
         tags.add(TCON(encoding=3, text=[write["genre"]]))
-    # Write lyrics if available
-    if settings.get("fetch_lyrics") == "true":
+    # Write lyrics if available (skip the network round-trip if we're about
+    # to restore lyrics the file already had - fetching would be redundant).
+    if settings.get("fetch_lyrics") == "true" and not saved_lyrics:
         try:
             from sources.lrclib_source import fetch_lyrics
             lyrics_data = fetch_lyrics(artist=write["artist"], title=write["title"], album=write["album"])
@@ -308,6 +317,9 @@ def _resolve_base_path(song):
     return os.path.dirname(song["filepath"])
 
 
+_long_path = paths.long_path
+
+
 def _organize_file(filepath, artist, title, album, year, track, ext, base_path, settings):
     """Move file into organized folder structure using configured patterns."""
 
@@ -337,21 +349,21 @@ def _organize_file(filepath, artist, title, album, year, track, ext, base_path, 
         new_name = f"{vals['track']} - {vals['artist']} - {vals['title']}{ext}"
 
     new_dir = os.path.join(base_path, folder)
-    os.makedirs(new_dir, exist_ok=True)
+    os.makedirs(_long_path(new_dir), exist_ok=True)
 
     new_path = os.path.join(new_dir, new_name)
 
     # Don't overwrite existing files
-    if os.path.exists(new_path) and os.path.abspath(new_path) != os.path.abspath(filepath):
+    if os.path.exists(_long_path(new_path)) and os.path.abspath(new_path) != os.path.abspath(filepath):
         base, ext_part = os.path.splitext(new_path)
         counter = 1
-        while os.path.exists(new_path):
+        while os.path.exists(_long_path(new_path)):
             new_path = f"{base} ({counter}){ext_part}"
             counter += 1
 
     if os.path.abspath(new_path) != os.path.abspath(filepath):
         old_dir = os.path.dirname(filepath)
-        shutil.move(filepath, new_path)
+        shutil.move(_long_path(filepath), _long_path(new_path))
         if settings.get("cleanup_empty_folders") == "true":
             _cleanup_empty_dirs(old_dir, stop_dir=base_path)
 
@@ -374,8 +386,8 @@ def _cleanup_empty_dirs(path, stop_dir=None):
         if parent == path:
             break
         try:
-            if os.path.isdir(path) and not os.listdir(path):
-                os.rmdir(path)
+            if os.path.isdir(_long_path(path)) and not os.listdir(_long_path(path)):
+                os.rmdir(_long_path(path))
                 path = parent
             else:
                 break

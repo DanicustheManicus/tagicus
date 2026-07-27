@@ -17,6 +17,7 @@ from typing import Optional
 import database as db
 import scanner
 import tag_writer
+import paths
 
 app = FastAPI(title="Tagicus", version="0.1.0")
 
@@ -44,6 +45,9 @@ class LibraryCreate(BaseModel):
 
 # --- Scan state ---
 scan_status = {"running": False, "total": 0, "scanned": 0, "current": "", "cancel": False}
+
+# --- Apply-batch state ---
+apply_status = {"running": False, "total": 0, "applied": 0, "current": "", "errors": [], "cancel": False}
 
 # --- Library Routes ---
 
@@ -75,8 +79,8 @@ def delete_song(song_id: int):
         raise HTTPException(status_code=404, detail="Song not found")
     filepath = song["filepath"]
     # Delete the actual file
-    if os.path.exists(filepath):
-        os.remove(filepath)
+    if os.path.exists(paths.long_path(filepath)):
+        os.remove(paths.long_path(filepath))
         # Clean up empty folders (bounded to the song's library, if known)
         old_dir = os.path.dirname(filepath)
         import tag_writer
@@ -102,6 +106,8 @@ def get_stats():
     stats = db.get_stats()
     stats["scan_running"] = scan_status["running"]
     stats["scan_progress"] = scan_status
+    stats["apply_running"] = apply_status["running"]
+    stats["apply_progress"] = apply_status
     return stats
 
 @app.get("/api/songs")
@@ -138,17 +144,38 @@ def apply_song_tags(song_id: int, req: ApplyRequest = ApplyRequest()):
     return result
 
 @app.post("/api/apply-batch")
-def apply_batch(req: ApplyRequest = ApplyRequest()):
+def apply_batch(req: ApplyRequest, bg: BackgroundTasks):
+    if apply_status["running"]:
+        raise HTTPException(status_code=409, detail="Apply already in progress")
+
     songs = db.get_all_songs("ready")
-    applied = []
-    errors = []
+    apply_status.update({"running": True, "total": len(songs), "applied": 0, "current": "", "errors": [], "cancel": False})
+    bg.add_task(_run_apply_batch, songs, req.organize, req.base_path)
+    return {"message": "Apply started", "total": len(songs)}
+
+@app.get("/api/apply-batch/status")
+def get_apply_status():
+    return apply_status
+
+@app.post("/api/apply-batch/cancel")
+def cancel_apply_batch():
+    if not apply_status["running"]:
+        return {"message": "No apply in progress"}
+    apply_status["cancel"] = True
+    return {"message": "Cancelling apply"}
+
+def _run_apply_batch(songs, organize, base_path):
     for song in songs:
-        result = tag_writer.apply_tags(song["id"], organize=req.organize, base_path=req.base_path)
+        if apply_status["cancel"]:
+            break
+        apply_status["current"] = song["filename"]
+        result = tag_writer.apply_tags(song["id"], organize=organize, base_path=base_path)
         if "error" in result:
-            errors.append({"id": song["id"], "file": song["filename"], "error": result["error"]})
-        else:
-            applied.append(song["id"])
-    return {"applied": len(applied), "errors": errors}
+            apply_status["errors"].append({"id": song["id"], "file": song["filename"], "error": result["error"]})
+        apply_status["applied"] += 1
+    apply_status["running"] = False
+    apply_status["current"] = ""
+    apply_status["cancel"] = False
 
 @app.post("/api/approve-reviews")
 def approve_reviews():
@@ -189,7 +216,8 @@ def stream_audio(song_id: int, request: Request):
     if not song:
         raise HTTPException(status_code=404, detail="Song not found")
     filepath = song["filepath"]
-    if not os.path.exists(filepath):
+    safe_filepath = paths.long_path(filepath)
+    if not os.path.exists(safe_filepath):
         raise HTTPException(status_code=404, detail="File not found")
 
     ext = os.path.splitext(filepath)[1].lower()
@@ -199,7 +227,7 @@ def stream_audio(song_id: int, request: Request):
         ".wav": "audio/wav", ".ape": "audio/x-ape",
     }
     mt = media_types.get(ext, "audio/mpeg")
-    file_size = os.path.getsize(filepath)
+    file_size = os.path.getsize(safe_filepath)
 
     range_header = request.headers.get("range")
 
@@ -211,7 +239,7 @@ def stream_audio(song_id: int, request: Request):
         length = end - start + 1
 
         def iter_range():
-            with open(filepath, "rb") as f:
+            with open(safe_filepath, "rb") as f:
                 f.seek(start)
                 remaining = length
                 while remaining > 0:
@@ -234,7 +262,7 @@ def stream_audio(song_id: int, request: Request):
         )
     else:
         def iter_file():
-            with open(filepath, "rb") as f:
+            with open(safe_filepath, "rb") as f:
                 while chunk := f.read(65536):
                     yield chunk
 
