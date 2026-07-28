@@ -553,6 +553,8 @@ function App() {
   const [filter, setFilter] = useState("all");
   const [scanning, setScanning] = useState(false);
   const [scanProg, setScanProg] = useState({total:0,scanned:0,current:""});
+  const [applying, setApplying] = useState(false);
+  const [applyProg, setApplyProg] = useState({total:0,applied:0,current:"",errors:[]});
   const [libraries, setLibraries] = useState([]);
   const [showScanModal, setShowScanModal] = useState(false);
   const [showAddLib, setShowAddLib] = useState(false);
@@ -588,14 +590,25 @@ function App() {
         setScanning(false);
         loadSongs(); loadStats();
       }
+      if (data.apply_running) {
+        setApplying(true);
+        setApplyProg(data.apply_progress);
+      } else if (applying) {
+        setApplying(false);
+        const errs = data.apply_progress.errors || [];
+        if (errs.length) {
+          alert(`Applied ${data.apply_progress.applied - errs.length}, but ${errs.length} failed:\n` + errs.map(e=>`${e.file}: ${e.error}`).join("\n"));
+        }
+        loadSongs(); loadStats();
+      }
     } catch(e) { console.error(e); }
-  }, [scanning, loadSongs]);
+  }, [scanning, applying, loadSongs]);
 
   useEffect(() => { loadStats(); loadSongs(); loadLibraries(); fetch("/api/settings").then(r=>r.json()).then(d=>{ setAppSettings(d); setShowTutorial(d.tutorial_done !== "true"); }).catch(()=>{}); }, []);
   useEffect(() => {
-    const iv = setInterval(loadStats, scanning ? 2000 : 15000);
+    const iv = setInterval(loadStats, (scanning || applying) ? 2000 : 15000);
     return () => clearInterval(iv);
-  }, [scanning, loadStats]);
+  }, [scanning, applying, loadStats]);
 
   const chooseFolder = async () => {
     if (!window.pywebview) {
@@ -646,30 +659,37 @@ function App() {
 
   const updateField = async (songId, field, value) => {
     try {
-      await fetch(`${API}/api/songs/${songId}/fields/${field}`, {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({value})});
+      const r = await fetch(`${API}/api/songs/${songId}/fields/${field}`, {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({value})});
+      if (!r.ok) { const err = await r.json().catch(()=>({})); alert(err.detail || "Failed to update field"); return; }
       loadSongs();
-    } catch(e) { console.error(e); }
+    } catch(e) { console.error(e); alert("Failed to update field: " + e); }
   };
 
   const rescan = async (songId) => {
     try {
-      await fetch(`${API}/api/songs/${songId}/rescan`, {method:"POST"});
+      const r = await fetch(`${API}/api/songs/${songId}/rescan`, {method:"POST"});
+      if (!r.ok) { const err = await r.json().catch(()=>({})); alert(err.detail || "Failed to rescan"); return; }
       loadSongs();
-    } catch(e) { console.error(e); }
+    } catch(e) { console.error(e); alert("Failed to rescan: " + e); }
   };
 
   const applyTags = async (songId) => {
     try {
-      await fetch(`${API}/api/songs/${songId}/apply`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({})});
+      const r = await fetch(`${API}/api/songs/${songId}/apply`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({})});
+      if (!r.ok) { const err = await r.json().catch(()=>({})); alert(err.detail || "Failed to apply tags"); return; }
       loadSongs(); loadStats();
-    } catch(e) { console.error(e); }
+    } catch(e) { console.error(e); alert("Failed to apply tags: " + e); }
   };
 
   const applyBatch = async () => {
     try {
-      await fetch(`${API}/api/apply-batch`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({})});
-      loadSongs(); loadStats();
-    } catch(e) { console.error(e); }
+      const r = await fetch(`${API}/api/apply-batch`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({})});
+      if (!r.ok) { const err = await r.json().catch(()=>({})); alert(err.detail || "Failed to apply tags"); return; }
+      const data = await r.json();
+      setApplying(true);
+      setApplyProg({total: data.total, applied: 0, current: "", errors: []});
+      loadStats();
+    } catch(e) { console.error(e); alert("Failed to apply tags: " + e); }
   };
 
   const filtered = songs.filter(s => filter === "all" ? true : s.status === filter);
@@ -688,8 +708,8 @@ function App() {
           <button className="btn btn-secondary" onClick={()=>{if(libraries.length>0)setShowScanModal(true);else{setView("libraries");setShowAddLib(true);browsePath("/");}}} disabled={scanning}>
             <i className="ti ti-folder-search" style={{fontSize:14}} /> {scanning ? "Scanning..." : "Scan"}
           </button>
-          {counts.ready > 0 && <button className="btn btn-primary" onClick={applyBatch}>
-            <i className="ti ti-checks" style={{fontSize:14}} /> Write Tags ({counts.ready})
+          {counts.ready > 0 && <button className="btn btn-primary" onClick={applyBatch} disabled={applying}>
+            <i className="ti ti-checks" style={{fontSize:14}} /> {applying ? "Writing..." : `Write Tags (${counts.ready})`}
           </button>}
           <button className="btn btn-ghost btn-sm" style={{color:"rgba(255,255,255,0.5)",padding:"4px 8px"}} onClick={()=>{setShowTutorial(true);fetch("/api/settings", {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({tutorial_done:"false"})}).catch(()=>{});}}>
             <i className="ti ti-help" style={{fontSize:14}} />
@@ -756,6 +776,16 @@ function App() {
         </div>
       )}
 
+      {applying && (
+        <div className="scan-progress">
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:12}}>
+            <span style={{color:"#7a8aa8"}}>Writing tags: <span style={{color:"#e0e4ec"}}>{applyProg.current}</span></span>
+            <span style={{display:"flex",alignItems:"center",gap:8}}><span style={{color:"#556680"}}>{applyProg.applied} / {applyProg.total}</span><button className="btn btn-ghost btn-sm" style={{color:"#e05555",padding:"2px 8px"}} onClick={async()=>{await fetch("/api/apply-batch/cancel",{method:"POST"});}}>Stop</button></span>
+          </div>
+          <div className="progress-bar"><div className="progress-fill" style={{width:`${applyProg.total?Math.round(applyProg.applied/applyProg.total*100):0}%`}} /></div>
+        </div>
+      )}
+
       {view === "dashboard" && (
         <div className="dashboard">
           <div className="stats-grid">
@@ -774,8 +804,8 @@ function App() {
             <button className="btn btn-secondary" onClick={()=>{setView("library");setFilter("review");}}>
               <i className="ti ti-eye" style={{fontSize:13}} /> Review issues
             </button>
-            {counts.ready > 0 && <button className="btn btn-primary" onClick={applyBatch}>
-              <i className="ti ti-checks" style={{fontSize:13}} /> Write Tags to Approved ({counts.ready})
+            {counts.ready > 0 && <button className="btn btn-primary" onClick={applyBatch} disabled={applying}>
+              <i className="ti ti-checks" style={{fontSize:13}} /> {applying ? "Writing..." : `Write Tags to Approved (${counts.ready})`}
             </button>}
           </div>
         </div>

@@ -9,6 +9,7 @@ import os, glob, time
 from thefuzz import fuzz
 from models import SourceResult
 from config import load_config, get_key
+import paths
 from sources.tag_reader import read_tags
 from sources.filename_parser import parse_filename
 from sources.acoustid_source import lookup_acoustid
@@ -36,13 +37,15 @@ def scan_file(filepath, config=None, settings=None):
     s = lambda k: settings.get(k) == "true"
     filename = os.path.basename(filepath)
     results = []
+
+    d = db.get_db()
+    existing = d.execute(
+        "SELECT status, organized FROM songs WHERE filepath = ?", (filepath,)
+    ).fetchone()
+    d.close()
+
     # Skip files already scanned and done (unless full rescan)
     if not config.get("_full_rescan"):
-        d = db.get_db()
-        existing = d.execute(
-            "SELECT status FROM songs WHERE filepath = ?", (filepath,)
-        ).fetchone()
-        d.close()
         if existing and existing["status"] == "done":
             return None
 
@@ -50,8 +53,12 @@ def scan_file(filepath, config=None, settings=None):
     tag_result = read_tags(filepath)
     results.append(tag_result)
 
+    # If Tagicus itself generated this filename from the current tags (via
+    # organize), it's not independent corroboration - it's the app echoing
+    # its own last write, and would let a bad edit "confirm itself" forever.
     filename_result = parse_filename(filepath)
-    results.append(filename_result)
+    if not (existing and existing["organized"]):
+        results.append(filename_result)
 
     local_artist = _pick_from_locals([tag_result, filename_result], "artist")
     local_title = _pick_from_locals([tag_result, filename_result], "title")
@@ -336,7 +343,7 @@ def rescan_file(song_id, config=None):
     if not song:
         return None
     filepath = song["filepath"]
-    if not os.path.exists(filepath):
+    if not os.path.exists(paths.long_path(filepath)):
         return None
 
     if config is None:
@@ -356,10 +363,18 @@ def rescan_file(song_id, config=None):
                 hint_title = f["value"]
 
     results = []
-    tag_result = read_tags(filepath)
+    tag_result = read_tags(paths.long_path(filepath))
     results.append(tag_result)
+
+    # If Tagicus itself generated this filename from the current tags (via
+    # organize), it isn't independent corroboration - it's the app echoing
+    # its own last write. Counting it as a second "local" vote would let a
+    # single bad edit "confirm itself" and permanently dodge conflict
+    # detection. Only trust the filename when it predates/is independent of
+    # our own organize step.
     filename_result = parse_filename(filepath)
-    results.append(filename_result)
+    if not song.get("organized"):
+        results.append(filename_result)
 
     local_artist = hint_artist or _pick_from_locals([tag_result, filename_result], "artist")
     local_title = hint_title or _pick_from_locals([tag_result, filename_result], "title")
@@ -381,6 +396,21 @@ def rescan_file(song_id, config=None):
         results.extend(_search_online(
             local_artist, local_title, None, discogs_token, config, settings
         ))
+        # Most sources effectively AND artist+title together, so a bad edit
+        # to one field can drag an otherwise-findable match down to zero
+        # results - hiding the very disagreement a rescan should catch. If
+        # only one of the two was hand-edited, also search using just the
+        # other, still-independently-sourced field, so a wrong artist can't
+        # suppress a correct title (or vice versa) from surfacing a
+        # genuinely contradicting vote.
+        if hint_artist and not hint_title and local_title:
+            results.extend(_search_online(
+                None, local_title, None, discogs_token, config, settings
+            ))
+        elif hint_title and not hint_artist and local_artist:
+            results.extend(_search_online(
+                local_artist, None, None, discogs_token, config, settings
+            ))
     elif _sources_agree(local_artist, acoustid_artist, local_title, acoustid_title):
         best_artist = acoustid_artist or local_artist
         best_title = acoustid_title or local_title
