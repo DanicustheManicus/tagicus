@@ -31,6 +31,27 @@ Tagicus was built out of frustration with that approach. Instead of trusting any
 - Catches and flags duplicate songs
 - Preserves embedded artwork and lyrics when clearing junk tags
 
+## How It Works
+
+**Reading and analyzing tags**
+Tagicus starts with whatever's already embedded in the file (ID3 for MP3, similar formats for MP4/FLAC/APE/etc.), plus it parses the filename and folder name for clues. These two "local" signals get extra weight when they agree with each other, since that usually means a real person already verified that data.
+
+**Fingerprinting (optional)**
+Turn on AcoustID in Settings and Tagicus fingerprints the actual audio using Chromaprint — identifying the song by what it *sounds like*, independent of whatever tags or filename it currently has. Useful for mislabeled or blank files. Fully optional, toggle it (and every other source) on or off in Settings.
+
+**Checking itself against every source**
+Every enabled source — existing tags, filename, AcoustID, MusicBrainz, Discogs, Deezer, TheAudioDB, Wikidata, plus any genre-specific databases you've turned on — casts a vote for each field (artist, title, album, year, track, genre). Tagicus groups similar-sounding answers together (so "The Beatles" and "Beatles, The" count as agreeing, not conflicting) and goes with whatever the most sources agree on. If everything lines up, that field gets marked high-confidence. If sources genuinely disagree, it's flagged for your review — you see exactly what each source said, instead of Tagicus silently guessing.
+
+**Finding duplicates**
+After a scan, Tagicus looks for songs that landed on the same verified artist + title (matched after normalizing case/spacing) and flags them — even across different folders or filenames. Because this compares the *cleaned-up, cross-checked* result rather than raw filenames, it catches duplicates a simple filename search would miss.
+
+**Applying changes**
+Once you approve a song (or run a batch apply), Tagicus writes the winning values into the file's real tags — you choose exactly which fields it's allowed to touch. Existing artwork and lyrics are protected by default even when old tags get wiped clean first, and it can strip out legacy leftover tag formats along the way (like APEv2 chunks tacked onto MP3s, or stray ID3 tags accidentally embedded in FLAC files).
+
+If you want your library organized too, Tagicus renames and moves each file into a folder structure you define (like `Artist/Album (Year)/Track - Artist - Title`), skips anything that would overwrite an existing file, and cleans up any folders left empty behind it.
+
+It can also fetch and embed matching lyrics from LRCLIB — synced, time-stamped lyrics if available and preferred, otherwise plain text — right into the file alongside everything else.
+
 ## Privacy-First Design
 
 Sources are organized into three privacy tiers:
