@@ -303,14 +303,53 @@ function SongRow({ song, isSelected, onClick }) {
 function DuplicatesView() {
   const [dupes, setDupes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(new Set());
   useEffect(() => {
     fetch("/api/duplicates").then(r=>r.json()).then(d=>{setDupes(d);setLoading(false);}).catch(()=>setLoading(false));
   }, []);
+
+  const toggle = (songId) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(songId)) next.delete(songId); else next.add(songId);
+      return next;
+    });
+  };
+
+  const removeFromState = (idsRemoved) => {
+    const idsSet = new Set(idsRemoved);
+    setDupes(prev => prev
+      .map(d => {
+        const keep = d.song_ids.map((id, idx) => idx).filter(idx => !idsSet.has(d.song_ids[idx]));
+        return { ...d, count: keep.length, song_ids: keep.map(idx => d.song_ids[idx]), filenames: keep.map(idx => d.filenames[idx]) };
+      })
+      .filter(d => d.count > 1)
+    );
+    setSelected(prev => { const next = new Set(prev); idsRemoved.forEach(id => next.delete(id)); return next; });
+  };
+
+  const deleteSelected = async () => {
+    if (selected.size === 0) return;
+    if (!confirm(`Delete ${selected.size} selected file(s)? This removes them permanently.`)) return;
+    const ids = [...selected];
+    const r = await fetch("/api/songs/bulk-delete", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({song_ids: ids})});
+    const data = await r.json().catch(()=>({deleted:0, errors:[]}));
+    if (data.errors && data.errors.length) {
+      alert(`Deleted ${data.deleted}, but ${data.errors.length} failed:\n` + data.errors.map(e=>`id ${e.id}: ${e.error}`).join("\n"));
+    }
+    removeFromState(ids);
+  };
+
   if (loading) return <div className="empty">Checking for duplicates...</div>;
   if (dupes.length === 0) return <div className="empty">No duplicates found</div>;
   return (
     <div className="libs-page">
-      <div style={{fontSize:16,fontWeight:500,marginBottom:16}}>Duplicates ({dupes.length} groups)</div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <div style={{fontSize:16,fontWeight:500}}>Duplicates ({dupes.length} groups)</div>
+        {selected.size > 0 && <button className="btn btn-primary btn-sm" style={{background:"#e05555",borderColor:"#e05555"}} onClick={deleteSelected}>
+          <i className="ti ti-trash" style={{fontSize:12}} /> Delete {selected.size} selected
+        </button>}
+      </div>
       {dupes.map((d, i) => (
         <div key={i} className="lib-card" style={{flexDirection:"column",alignItems:"stretch"}}>
           <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
@@ -323,9 +362,12 @@ function DuplicatesView() {
           <div style={{display:"flex",flexDirection:"column",gap:4}}>
             {d.filenames.map((fn, j) => (
               <div key={j} style={{fontSize:11,color:"#7a8aa8",padding:"4px 8px",background:"rgba(255,255,255,0.02)",borderRadius:4,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <span>{fn}</span>
+                <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",flex:1}}>
+                  <input type="checkbox" checked={selected.has(d.song_ids[j])} onChange={()=>toggle(d.song_ids[j])} />
+                  <span>{fn}</span>
+                </label>
                 <div style={{display:"flex",gap:4}}>
-                  <button className="btn btn-ghost btn-sm" style={{color:"#e05555",padding:"2px 8px",fontSize:10}} onClick={async(e)=>{e.stopPropagation();if(confirm("Delete "+fn+"? This removes the file permanently.")){await fetch("/api/songs/"+d.song_ids[j],{method:"DELETE"});setDupes(dupes.filter((_,idx)=>idx!==i).concat(d.count>2?[{...d,count:d.count-1,song_ids:d.song_ids.filter((_,idx2)=>idx2!==j),filenames:d.filenames.filter((_,idx2)=>idx2!==j)}]:[]));}}}>
+                  <button className="btn btn-ghost btn-sm" style={{color:"#e05555",padding:"2px 8px",fontSize:10}} onClick={async(e)=>{e.stopPropagation();if(confirm("Delete "+fn+"? This removes the file permanently.")){await fetch("/api/songs/"+d.song_ids[j],{method:"DELETE"});removeFromState([d.song_ids[j]]);}}}>
                     <i className="ti ti-trash" style={{fontSize:11}} /> Remove
                   </button>
                 </div>

@@ -53,6 +53,9 @@ class GenreRename(BaseModel):
     old_name: str
     new_name: str
 
+class BulkDelete(BaseModel):
+    song_ids: list[int]
+
 # --- Scan state ---
 scan_status = {"running": False, "total": 0, "scanned": 0, "current": "", "cancel": False}
 
@@ -83,13 +86,13 @@ def delete_library(lib_id: int):
     db.delete_library(lib_id)
     return {"deleted": True}
 
-@app.delete("/api/songs/{song_id}")
-def delete_song(song_id: int):
+def _delete_song(song_id):
+    """Delete a song's file (if present) and its DB rows. Returns the song
+    dict that was deleted, or None if no song had that id."""
     song = db.get_song(song_id)
     if not song:
-        raise HTTPException(status_code=404, detail="Song not found")
+        return None
     filepath = song["filepath"]
-    # Delete the actual file
     if os.path.exists(paths.long_path(filepath)):
         os.remove(paths.long_path(filepath))
         # Clean up empty folders (bounded to the song's library, if known)
@@ -97,14 +100,37 @@ def delete_song(song_id: int):
         import tag_writer
         lib = db.get_library(song["library_id"]) if song.get("library_id") else None
         tag_writer._cleanup_empty_dirs(old_dir, stop_dir=lib["path"] if lib else None)
-    # Remove from database
     d = db.get_db()
     d.execute("DELETE FROM song_votes WHERE song_id = ?", (song_id,))
     d.execute("DELETE FROM song_fields WHERE song_id = ?", (song_id,))
     d.execute("DELETE FROM songs WHERE id = ?", (song_id,))
     d.commit()
     d.close()
+    return song
+
+
+@app.delete("/api/songs/{song_id}")
+def delete_song(song_id: int):
+    song = _delete_song(song_id)
+    if not song:
+        raise HTTPException(status_code=404, detail="Song not found")
     return {"deleted": True}
+
+
+@app.post("/api/songs/bulk-delete")
+def bulk_delete_songs(req: BulkDelete):
+    deleted = 0
+    errors = []
+    for song_id in req.song_ids:
+        try:
+            song = _delete_song(song_id)
+            if song:
+                deleted += 1
+            else:
+                errors.append({"id": song_id, "error": "Song not found"})
+        except Exception as e:
+            errors.append({"id": song_id, "error": str(e)})
+    return {"deleted": deleted, "errors": errors}
 
 # --- API Routes ---
 
