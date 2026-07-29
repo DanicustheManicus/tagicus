@@ -14,10 +14,10 @@ api_keys:
 
 def load_config():
     if not os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH, "w") as f:
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             f.write(DEFAULT_CONFIG)
         return {}
-    with open(CONFIG_PATH, "r") as f:
+    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
 
 def get_key(config, service):

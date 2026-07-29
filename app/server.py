@@ -367,7 +367,7 @@ app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__
 def serve_frontend():
     index_path = os.path.join(os.path.dirname(__file__), "static", "index.html")
     if os.path.exists(index_path):
-        with open(index_path) as f:
+        with open(index_path, encoding="utf-8") as f:
             return f.read()
     return HTMLResponse("<h1>Tagicus</h1><p>Frontend not found. Place index.html in app/static/</p>")
 
