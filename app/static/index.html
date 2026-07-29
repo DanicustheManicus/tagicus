@@ -772,10 +772,11 @@ function App() {
 
   const startScan = async (path, fullRescan) => {
     try {
-      await fetch(`${API}/api/scan`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({path, full_rescan: fullRescan || false})});
+      const r = await fetch(`${API}/api/scan`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({path, full_rescan: fullRescan || false})});
+      if (!r.ok) { const err = await r.json().catch(()=>({})); alert(err.detail || "Failed to start scan"); return; }
       setScanning(true);
       setShowScanModal(false);
-    } catch(e) { console.error(e); }
+    } catch(e) { console.error(e); alert("Failed to start scan: " + e); }
   };
 
   const updateField = async (songId, field, value) => {

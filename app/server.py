@@ -182,6 +182,12 @@ def apply_song_tags(song_id: int, req: ApplyRequest = ApplyRequest()):
 def apply_batch(req: ApplyRequest, bg: BackgroundTasks):
     if apply_status["running"]:
         raise HTTPException(status_code=409, detail="Apply already in progress")
+    if scan_status["running"]:
+        # Organize moves/renames files while apply runs. If a scan's
+        # directory walk is happening at the same time, it can see the same
+        # physical file twice - once at its old path, once at its new one -
+        # producing phantom duplicate rows. Keep these mutually exclusive.
+        raise HTTPException(status_code=409, detail="Cannot apply tags while a scan is in progress")
 
     songs = db.get_all_songs("ready")
     apply_status.update({"running": True, "total": len(songs), "applied": 0, "current": "", "errors": [], "cancel": False})
@@ -199,10 +205,15 @@ def cancel_apply_batch():
     apply_status["cancel"] = True
     return {"message": "Cancelling apply"}
 
-def _apply_one(song, organize, base_path):
+APPLY_PER_SONG_TIMEOUT = 60
+
+def _apply_one(song, organize, base_path, done_ids):
     apply_status["current"] = song["filename"]
     result = tag_writer.apply_tags(song["id"], organize=organize, base_path=base_path)
     with apply_status_lock:
+        if song["id"] in done_ids:
+            return  # already accounted for by the timeout path below
+        done_ids.add(song["id"])
         if "error" in result:
             apply_status["errors"].append({"id": song["id"], "file": song["filename"], "error": result["error"]})
         apply_status["applied"] += 1
@@ -212,14 +223,35 @@ def _run_apply_batch(songs, organize, base_path):
     # Each song is a separate file, so writing several at once is safe -
     # this is what was making a batch apply take hours: one song at a time,
     # each one potentially waiting on a slow LRCLIB lyrics lookup.
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        futures = []
-        for song in songs:
-            if apply_status["cancel"]:
-                break
-            futures.append(pool.submit(_apply_one, song, organize, base_path))
-        for f in futures:
-            f.result()
+    #
+    # The network calls inside apply_tags (lyrics/cover-art fetch) only cap
+    # each individual socket read, not the total transfer time - a slow but
+    # not-dead connection can run well past that. Without a timeout here,
+    # one stuck file would block the whole batch forever, since results are
+    # collected in submission order. done_ids prevents double-counting if a
+    # "timed out" song's thread finishes on its own after we've moved on.
+    done_ids = set()
+    pool = ThreadPoolExecutor(max_workers=8)
+    futures = {}
+    for song in songs:
+        if apply_status["cancel"]:
+            break
+        futures[pool.submit(_apply_one, song, organize, base_path, done_ids)] = song
+
+    for f, song in futures.items():
+        try:
+            f.result(timeout=APPLY_PER_SONG_TIMEOUT)
+        except Exception as e:
+            with apply_status_lock:
+                if song["id"] not in done_ids:
+                    done_ids.add(song["id"])
+                    msg = (f"Timed out after {APPLY_PER_SONG_TIMEOUT}s (likely a stuck network "
+                           f"lookup) - it may still finish in the background") if isinstance(e, TimeoutError) else str(e)
+                    apply_status["errors"].append({"id": song["id"], "file": song["filename"], "error": msg})
+                    apply_status["applied"] += 1
+
+    # Don't block shutdown on a thread we've already given up waiting on.
+    pool.shutdown(wait=False)
     apply_status["running"] = False
     apply_status["current"] = ""
     apply_status["cancel"] = False
@@ -238,6 +270,8 @@ def approve_reviews():
 def start_scan(req: ScanRequest, bg: BackgroundTasks):
     if scan_status["running"]:
         raise HTTPException(status_code=409, detail="Scan already in progress")
+    if apply_status["running"]:
+        raise HTTPException(status_code=409, detail="Cannot scan while tags are being applied")
 
     if not os.path.exists(req.path):
         raise HTTPException(status_code=400, detail=f"Path not found: {req.path}")
