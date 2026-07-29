@@ -225,7 +225,7 @@ function EditableField({ label, field, onUpdate }) {
   );
 }
 
-function DetailPanel({ song, onUpdate, onRescan, onApply, settings }) {
+function DetailPanel({ song, onUpdate, onRescan, onApply, onDelete, settings, busy }) {
   const f = song.fields || {};
   const nf = buildNewFilename(f, song.filename, settings);
   const changed = nf && nf !== song.filename;
@@ -237,11 +237,14 @@ function DetailPanel({ song, onUpdate, onRescan, onApply, settings }) {
           <div className="detail-file">{song.filename}</div>
         </div>
         <div style={{display:"flex",gap:6}}>
-          <button className="btn btn-ghost btn-sm" onClick={onRescan}>
-            <i className="ti ti-refresh" style={{fontSize:12}} /> Re-scan
+          <button className="btn btn-ghost btn-sm" onClick={onRescan} disabled={!!busy}>
+            <i className={`ti ${busy==="rescan"?"ti-loader-2":"ti-refresh"}`} style={{fontSize:12}} /> {busy==="rescan"?"Re-scanning...":"Re-scan"}
           </button>
-          <button className="btn btn-primary btn-sm" onClick={onApply}>
-            <i className="ti ti-check" style={{fontSize:12}} /> Apply tags
+          <button className="btn btn-primary btn-sm" onClick={onApply} disabled={!!busy}>
+            <i className={`ti ${busy==="apply"?"ti-loader-2":"ti-check"}`} style={{fontSize:12}} /> {busy==="apply"?"Applying...":"Apply tags"}
+          </button>
+          <button className="btn btn-ghost btn-sm" style={{color:"#e05555"}} onClick={onDelete} disabled={!!busy}>
+            <i className="ti ti-trash" style={{fontSize:12}} /> Delete
           </button>
         </div>
       </div>
@@ -331,6 +334,112 @@ function DuplicatesView() {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function AnalyticsView() {
+  const [artists, setArtists] = useState([]);
+  const [genres, setGenres] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedSolo, setSelectedSolo] = useState(new Set());
+  const [renamingGenre, setRenamingGenre] = useState(null);
+  const [renameTarget, setRenameTarget] = useState("");
+
+  const load = useCallback(() => {
+    Promise.all([
+      fetch("/api/artist-stats").then(r=>r.json()),
+      fetch("/api/genre-stats").then(r=>r.json()),
+    ]).then(([a, g]) => { setArtists(a); setGenres(g); setLoading(false); }).catch(()=>setLoading(false));
+  }, []);
+  useEffect(load, [load]);
+
+  const soloArtists = artists.filter(a => a.track_count === 1);
+
+  const toggleSolo = (artist) => {
+    setSelectedSolo(prev => {
+      const next = new Set(prev);
+      if (next.has(artist)) next.delete(artist); else next.add(artist);
+      return next;
+    });
+  };
+
+  const retagSelected = async () => {
+    const songIds = soloArtists.filter(a => selectedSolo.has(a.artist)).flatMap(a => a.song_ids);
+    if (songIds.length === 0) return;
+    if (!confirm(`Retag ${songIds.length} song(s) as "Various Artists"?`)) return;
+    try {
+      const r = await fetch("/api/songs/bulk-field", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({song_ids: songIds, field_name: "artist", value: "Various Artists"})});
+      if (!r.ok) { const err = await r.json().catch(()=>({})); alert(err.detail || "Failed to retag"); return; }
+      setSelectedSolo(new Set());
+      load();
+    } catch(e) { alert("Failed to retag: " + e); }
+  };
+
+  const confirmRename = async () => {
+    if (!renameTarget.trim()) return;
+    try {
+      const r = await fetch("/api/genre-stats/rename", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({old_name: renamingGenre, new_name: renameTarget.trim()})});
+      if (!r.ok) { const err = await r.json().catch(()=>({})); alert(err.detail || "Failed to rename"); return; }
+      setRenamingGenre(null); setRenameTarget("");
+      load();
+    } catch(e) { alert("Failed to rename: " + e); }
+  };
+
+  if (loading) return <div className="empty">Loading analytics...</div>;
+
+  return (
+    <div className="libs-page">
+      <div style={{fontSize:16,fontWeight:500,marginBottom:8}}>Artists</div>
+      <div style={{fontSize:11,color:"#7a8aa8",marginBottom:12}}>
+        {soloArtists.length} of {artists.length} artists have only 1 track in your library - often a sign of a compilation album. Select any below to retag as "Various Artists".
+      </div>
+      {selectedSolo.size > 0 && (
+        <button className="btn btn-primary btn-sm" style={{marginBottom:12}} onClick={retagSelected}>
+          <i className="ti ti-users" style={{fontSize:12}} /> Retag {selectedSolo.size} selected as Various Artists
+        </button>
+      )}
+      <div style={{maxHeight:280,overflowY:"auto",marginBottom:28,border:"1px solid rgba(255,255,255,0.06)",borderRadius:8}}>
+        {soloArtists.length === 0 && <div className="empty">No solo-track artists found.</div>}
+        {soloArtists.map(a => (
+          <div key={a.artist} className="lib-card" style={{cursor:"pointer",borderRadius:0,borderBottom:"1px solid rgba(255,255,255,0.04)"}} onClick={()=>toggleSolo(a.artist)}>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <input type="checkbox" checked={selectedSolo.has(a.artist)} onChange={()=>toggleSolo(a.artist)} onClick={e=>e.stopPropagation()} />
+              <span className="lib-name">{a.artist}</span>
+            </div>
+            <span className="lib-count">1 track</span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{fontSize:16,fontWeight:500,marginBottom:8}}>Genre Breakdown</div>
+      <div style={{fontSize:11,color:"#7a8aa8",marginBottom:12}}>
+        {genres.length} distinct genres across your library. Use "Merge into…" to fold a variant (e.g. Electro) into another (e.g. Electronic).
+      </div>
+      <div>
+        {genres.map(g => (
+          <div key={g.genre} className="lib-card" style={{flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:160}}>
+              <div className="lib-name">{g.genre}</div>
+              <div style={{background:"rgba(255,255,255,0.05)",borderRadius:4,height:6,marginTop:4,overflow:"hidden"}}>
+                <div style={{background:"#4a8fe7",height:"100%",width:`${g.percent}%`}} />
+              </div>
+            </div>
+            <span className="lib-count" style={{marginLeft:12}}>{g.count} ({g.percent}%)</span>
+            {renamingGenre === g.genre ? (
+              <div style={{display:"flex",gap:4,marginLeft:8,alignItems:"center"}}>
+                <input style={{width:140}} placeholder="Merge into…" value={renameTarget} onChange={e=>setRenameTarget(e.target.value)} />
+                <button className="btn btn-primary btn-sm" onClick={confirmRename}>OK</button>
+                <button className="btn btn-ghost btn-sm" onClick={()=>setRenamingGenre(null)}>Cancel</button>
+              </div>
+            ) : (
+              <button className="btn btn-ghost btn-sm" style={{marginLeft:8}} onClick={()=>{setRenamingGenre(g.genre);setRenameTarget("");}}>
+                Merge into…
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -555,6 +664,8 @@ function App() {
   const [scanProg, setScanProg] = useState({total:0,scanned:0,current:""});
   const [applying, setApplying] = useState(false);
   const [applyProg, setApplyProg] = useState({total:0,applied:0,current:"",errors:[]});
+  const [busySongId, setBusySongId] = useState(null);
+  const [busyAction, setBusyAction] = useState(null);
   const [libraries, setLibraries] = useState([]);
   const [showScanModal, setShowScanModal] = useState(false);
   const [showAddLib, setShowAddLib] = useState(false);
@@ -649,6 +760,16 @@ function App() {
     } catch(e) { console.error(e); }
   };
 
+  const deleteSong = async (songId) => {
+    if (!confirm("Delete this file? This removes it from disk permanently.")) return;
+    try {
+      const r = await fetch(`${API}/api/songs/${songId}`, {method:"DELETE"});
+      if (!r.ok) { const err = await r.json().catch(()=>({})); alert(err.detail || "Failed to delete"); return; }
+      setSelected(sel => sel === songId ? null : sel);
+      loadSongs(); loadStats();
+    } catch(e) { console.error(e); alert("Failed to delete: " + e); }
+  };
+
   const startScan = async (path, fullRescan) => {
     try {
       await fetch(`${API}/api/scan`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({path, full_rescan: fullRescan || false})});
@@ -666,19 +787,23 @@ function App() {
   };
 
   const rescan = async (songId) => {
+    setBusySongId(songId); setBusyAction("rescan");
     try {
       const r = await fetch(`${API}/api/songs/${songId}/rescan`, {method:"POST"});
       if (!r.ok) { const err = await r.json().catch(()=>({})); alert(err.detail || "Failed to rescan"); return; }
       loadSongs();
     } catch(e) { console.error(e); alert("Failed to rescan: " + e); }
+    finally { setBusySongId(null); setBusyAction(null); }
   };
 
   const applyTags = async (songId) => {
+    setBusySongId(songId); setBusyAction("apply");
     try {
       const r = await fetch(`${API}/api/songs/${songId}/apply`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({})});
       if (!r.ok) { const err = await r.json().catch(()=>({})); alert(err.detail || "Failed to apply tags"); return; }
       loadSongs(); loadStats();
     } catch(e) { console.error(e); alert("Failed to apply tags: " + e); }
+    finally { setBusySongId(null); setBusyAction(null); }
   };
 
   const applyBatch = async () => {
@@ -730,6 +855,9 @@ function App() {
 
         <div className={`nav-tab ${view==="duplicates"?"active":""}`} onClick={()=>setView("duplicates")}>
           <i className="ti ti-copy" style={{fontSize:14,marginRight:4}} /> Duplicates
+        </div>
+        <div className={`nav-tab ${view==="analytics"?"active":""}`} onClick={()=>setView("analytics")}>
+          <i className="ti ti-chart-bar" style={{fontSize:14,marginRight:4}} /> Analytics
         </div>
         <div className={`nav-tab ${view==="settings"?"active":""}`} onClick={()=>setView("settings")}>
           <i className="ti ti-settings" style={{fontSize:14,marginRight:4}} /> Settings
@@ -831,9 +959,11 @@ function App() {
               <div key={song.id}>
                 <SongRow song={song} isSelected={selected===song.id} onClick={()=>setSelected(selected===song.id?null:song.id)} />
                 {selected===song.id && <DetailPanel song={song} settings={appSettings}
+                  busy={busySongId===song.id ? busyAction : null}
                   onUpdate={(f,v)=>updateField(song.id,f,v)}
                   onRescan={()=>rescan(song.id)}
-                  onApply={()=>applyTags(song.id)} />}
+                  onApply={()=>applyTags(song.id)}
+                  onDelete={()=>deleteSong(song.id)} />}
               </div>
             ))}
           </div>
@@ -895,6 +1025,7 @@ function App() {
         </div>
       )}
         {view === "duplicates" && <DuplicatesView />}
+        {view === "analytics" && <AnalyticsView />}
         {view === "settings" && <SettingsPage />}
 
     </div>

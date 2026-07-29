@@ -19,13 +19,26 @@ def parse_filename(filepath):
         year = year_match.group(1)
         basename = basename[:year_match.start()].strip()
 
+    # Multi-disc rips often prefix the filename with "disc-track" (e.g.
+    # "1-06 Artist - Title"). The patterns below expect a single plain track
+    # number, so without this they misread the "-06" half as the start of
+    # "artist - title" and glue the "06" onto the artist. Peel the disc-track
+    # pair off first and keep just the track half.
+    disc_track_match = re.match(r"^\d{1,2}-(\d{1,3})\s+(.+)$", basename)
+    if disc_track_match:
+        try:
+            track = int(disc_track_match.group(1))
+        except ValueError:
+            track = None
+        basename = disc_track_match.group(2).strip()
+
     for pattern in FILENAME_PATTERNS:
         match = pattern.match(basename)
         if match:
             g = match.groupdict()
             artist, title, album = g.get("artist"), g.get("title"), g.get("album")
             ts = g.get("track")
-            if ts:
+            if ts and track is None:
                 try: track = int(ts)
                 except: pass
             break

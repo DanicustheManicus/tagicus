@@ -401,6 +401,104 @@ def find_duplicates():
         })
     return result
 
+
+def get_artist_stats():
+    """Group songs by verified artist with track counts. Artists with only
+    1 track are often actually one-off contributors on a various-artists
+    compilation, not a real "artist" worth its own entry in a library view."""
+    d = get_db()
+    rows = d.execute("""
+        SELECT sf.best_value as artist,
+               COUNT(DISTINCT s.id) as track_count,
+               GROUP_CONCAT(s.id) as song_ids
+        FROM songs s
+        JOIN song_fields sf ON s.id = sf.song_id AND sf.field_name = 'artist'
+        WHERE sf.best_value IS NOT NULL AND TRIM(sf.best_value) != ''
+        GROUP BY LOWER(TRIM(sf.best_value))
+        ORDER BY track_count ASC, artist ASC
+    """).fetchall()
+    d.close()
+    return [
+        {
+            "artist": row["artist"],
+            "track_count": row["track_count"],
+            "song_ids": [int(x) for x in row["song_ids"].split(",")],
+        }
+        for row in rows
+    ]
+
+
+def get_genre_stats():
+    """Count how many tracks carry each individual genre. Genre values are
+    stored comma-separated for multi-genre tracks (e.g. "Rock,Metal"), so
+    each track can contribute to more than one genre's count here."""
+    d = get_db()
+    rows = d.execute("""
+        SELECT sf.best_value as genre, s.id as song_id
+        FROM songs s
+        JOIN song_fields sf ON s.id = sf.song_id AND sf.field_name = 'genre'
+        WHERE sf.best_value IS NOT NULL AND TRIM(sf.best_value) != ''
+    """).fetchall()
+    d.close()
+
+    counts = {}
+    song_ids_by_genre = {}
+    for row in rows:
+        for part in row["genre"].split(","):
+            g = part.strip()
+            if not g:
+                continue
+            counts[g] = counts.get(g, 0) + 1
+            song_ids_by_genre.setdefault(g, set()).add(row["song_id"])
+
+    total = len(rows)
+    result = [
+        {
+            "genre": g,
+            "count": c,
+            "percent": round(c / total * 100, 1) if total else 0,
+            "song_ids": sorted(song_ids_by_genre[g]),
+        }
+        for g, c in counts.items()
+    ]
+    result.sort(key=lambda r: r["count"], reverse=True)
+    return result
+
+
+def rename_genre(old_name, new_name):
+    """Rename one genre variant to another across every song that has it
+    (e.g. merge "Electro" into "Electronic"). Operates on the individual
+    genre piece within a possibly multi-genre comma-separated value,
+    without disturbing the track's other genres."""
+    d = get_db()
+    rows = d.execute("""
+        SELECT id, song_id, best_value FROM song_fields
+        WHERE field_name = 'genre' AND best_value IS NOT NULL AND TRIM(best_value) != ''
+    """).fetchall()
+    updated = 0
+    old_lower = old_name.strip().lower()
+    for row in rows:
+        parts = [p.strip() for p in row["best_value"].split(",")]
+        if not any(p.lower() == old_lower for p in parts):
+            continue
+        new_parts = [new_name if p.lower() == old_lower else p for p in parts]
+        # Drop duplicates that result from merging (e.g. "Rock,Electro" -> "Rock,Electronic" when already "Rock,Electronic")
+        seen = set()
+        deduped = []
+        for p in new_parts:
+            key = p.lower()
+            if key not in seen:
+                seen.add(key)
+                deduped.append(p)
+        d.execute(
+            "UPDATE song_fields SET best_value = ?, user_edited = 1 WHERE id = ?",
+            (",".join(deduped), row["id"])
+        )
+        updated += 1
+    d.commit()
+    d.close()
+    return updated
+
 DEFAULTS = {
     "organize_enabled": "true",
     "folder_pattern": "{artist}/{album} ({year})",
@@ -431,6 +529,7 @@ DEFAULTS = {
     "write_genre": "true",
     "fetch_lyrics": "true",
     "prefer_synced_lyrics": "true",
+    "fetch_artwork": "true",
     "tutorial_done": "false",
 
 }

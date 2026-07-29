@@ -112,20 +112,45 @@ def _extract_lyrics_mp3(tags):
     return lyrics
 
 
+def _extract_genre_mp3(tags):
+    """Extract TCON (genre) frames from ID3 tags."""
+    genres = []
+    if tags:
+        for key in list(tags.keys()):
+            if key.startswith("TCON"):
+                genres.append(tags[key])
+    return genres
+
+
+def _split_genres(genre_str):
+    """Split a comma-separated genre field ("Rock, Metal") into a list of
+    individual genres, so it gets written as a proper multi-value tag
+    instead of one literal string containing commas."""
+    if not genre_str:
+        return []
+    parts = [g.strip() for g in str(genre_str).split(",")]
+    return [g for g in parts if g]
+
+
 def _write_mp3(filepath, write, settings):
     s = lambda k: settings.get(k) == "true"
 
     audio = MP3(filepath)
     tags = audio.tags
 
-    # Save artwork and lyrics before clearing
+    # Save artwork, lyrics, and genre before clearing. Genre is only saved
+    # when we're not about to write a new one - if write_genre is on, the
+    # new value overwrites naturally and there's nothing to restore.
     saved_artwork = []
     saved_lyrics = []
+    saved_genre = []
     if tags:
         if s("preserve_artwork"):
             saved_artwork = _extract_artwork_mp3(tags)
         if s("preserve_lyrics"):
             saved_lyrics = _extract_lyrics_mp3(tags)
+        if not write["genre"]:
+            saved_genre = _extract_genre_mp3(tags)
 
     # Remove APEv2 from MP3 if enabled
     if s("remove_apev2_from_mp3"):
@@ -164,7 +189,7 @@ def _write_mp3(filepath, write, settings):
     if write["track"]:
         tags.add(TRCK(encoding=3, text=[str(write["track"])]))
     if write["genre"]:
-        tags.add(TCON(encoding=3, text=[write["genre"]]))
+        tags.add(TCON(encoding=3, text=_split_genres(write["genre"])))
     # Write lyrics if available (skip the network round-trip if we're about
     # to restore lyrics the file already had - fetching would be redundant).
     if settings.get("fetch_lyrics") == "true" and not saved_lyrics:
@@ -181,11 +206,25 @@ def _write_mp3(filepath, write, settings):
         except Exception:
             pass
 
-    # Restore artwork and lyrics
+    # Fetch cover art if this file didn't have any to begin with (nothing
+    # was saved above to restore)
+    if not saved_artwork and settings.get("fetch_artwork") == "true":
+        try:
+            from sources.audiodb_source import fetch_artwork
+            art = fetch_artwork(artist=write["artist"], title=write["title"], album=write["album"])
+            if art:
+                mime, data = art
+                tags.add(APIC(encoding=3, mime=mime, type=3, desc="cover", data=data))
+        except Exception:
+            pass
+
+    # Restore artwork, lyrics, and genre
     for art in saved_artwork:
         tags.add(art)
     for lyric in saved_lyrics:
         tags.add(lyric)
+    for genre_frame in saved_genre:
+        tags.add(genre_frame)
 
     audio.save()
 
@@ -195,10 +234,15 @@ def _write_mp4(filepath, write, settings):
 
     audio = MP4(filepath)
 
-    # Save artwork before clearing
+    # Save artwork and genre before clearing (genre only if we're not about
+    # to write a new one - see _write_mp3 for why)
     saved_artwork = None
-    if s("preserve_artwork") and audio.tags and "covr" in audio.tags:
-        saved_artwork = audio.tags["covr"]
+    saved_genre = None
+    if audio.tags:
+        if s("preserve_artwork") and "covr" in audio.tags:
+            saved_artwork = audio.tags["covr"]
+        if not write["genre"] and "\xa9gen" in audio.tags:
+            saved_genre = audio.tags["\xa9gen"]
 
     if s("clear_tags"):
         audio.delete()
@@ -216,16 +260,31 @@ def _write_mp4(filepath, write, settings):
     if write["year"]:
         audio["\xa9day"] = [str(write["year"])]
     if write["genre"]:
-        audio["\xa9gen"] = [write["genre"]]
+        audio["\xa9gen"] = _split_genres(write["genre"])
     if write["track"]:
         try:
             audio["trkn"] = [(int(write["track"]), 0)]
         except Exception:
             pass
 
-    # Restore artwork
+    # Fetch cover art if this file didn't have any to begin with
+    if not saved_artwork and settings.get("fetch_artwork") == "true":
+        try:
+            from sources.audiodb_source import fetch_artwork
+            from mutagen.mp4 import MP4Cover
+            art = fetch_artwork(artist=write["artist"], title=write["title"], album=write["album"])
+            if art:
+                mime, data = art
+                fmt = MP4Cover.FORMAT_PNG if "png" in mime.lower() else MP4Cover.FORMAT_JPEG
+                audio["covr"] = [MP4Cover(data, imageformat=fmt)]
+        except Exception:
+            pass
+
+    # Restore artwork and genre
     if saved_artwork:
         audio["covr"] = saved_artwork
+    if saved_genre:
+        audio["\xa9gen"] = saved_genre
 
     audio.save()
 
@@ -250,10 +309,14 @@ def _write_flac(filepath, write, settings):
         except Exception:
             pass
 
-    # Save artwork (FLAC stores pictures separately)
+    # Save artwork (FLAC stores pictures separately) and genre before
+    # clearing (genre only if we're not about to write a new one)
     saved_pictures = []
+    saved_genre = []
     if s("preserve_artwork") and audio.pictures:
         saved_pictures = list(audio.pictures)
+    if not write["genre"] and audio.get("genre"):
+        saved_genre = list(audio["genre"])
 
     if s("clear_tags"):
         audio.delete()
@@ -270,11 +333,29 @@ def _write_flac(filepath, write, settings):
     if write["track"]:
         audio["tracknumber"] = str(write["track"])
     if write["genre"]:
-        audio["genre"] = write["genre"]
+        audio["genre"] = _split_genres(write["genre"])
 
-    # Restore artwork
+    # Fetch cover art if this file didn't have any to begin with
+    if not saved_pictures and settings.get("fetch_artwork") == "true":
+        try:
+            from sources.audiodb_source import fetch_artwork
+            from mutagen.flac import Picture
+            art = fetch_artwork(artist=write["artist"], title=write["title"], album=write["album"])
+            if art:
+                mime, data = art
+                pic = Picture()
+                pic.type = 3
+                pic.mime = mime
+                pic.data = data
+                audio.add_picture(pic)
+        except Exception:
+            pass
+
+    # Restore artwork and genre
     for pic in saved_pictures:
         audio.add_picture(pic)
+    if saved_genre:
+        audio["genre"] = saved_genre
 
     audio.save()
 
@@ -285,6 +366,10 @@ def _write_generic(filepath, write, settings):
     audio = mutagen.File(filepath, easy=True)
     if audio is None:
         return
+
+    saved_genre = []
+    if not write["genre"] and audio.get("genre"):
+        saved_genre = list(audio["genre"])
 
     if s("clear_tags"):
         audio.delete()
@@ -302,7 +387,10 @@ def _write_generic(filepath, write, settings):
     if write["track"]:
         audio["tracknumber"] = str(write["track"])
     if write["genre"]:
-        audio["genre"] = write["genre"]
+        audio["genre"] = _split_genres(write["genre"])
+
+    if saved_genre:
+        audio["genre"] = saved_genre
 
     audio.save()
 

@@ -3,7 +3,7 @@
 ; this script with Inno Setup (iscc installer.iss) from this directory.
 
 #define AppName "Tagicus"
-#define AppVersion "0.1.0"
+#define AppVersion "0.2.0"
 #define AppPublisher "Tagicus"
 #define AppExeName "Tagicus.exe"
 

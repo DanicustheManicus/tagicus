@@ -114,3 +114,33 @@ def get_album_art(artist=None, album=None):
         pass
 
     return None
+
+
+def fetch_artwork(artist=None, title=None, album=None):
+    """Find and download cover art from TheAudioDB.
+
+    Returns (mime_type, image_bytes) or None if nothing was found.
+    """
+    thumb_url = None
+
+    if artist and title:
+        result = lookup_audiodb(artist=artist, title=title)
+        artwork = (result.raw or {}).get("artwork", {})
+        thumb_url = artwork.get("track_thumb") or artwork.get("album_thumb")
+
+    if not thumb_url and artist and album:
+        thumb_url = get_album_art(artist=artist, album=album)
+
+    if not thumb_url:
+        return None
+
+    try:
+        req = urllib.request.Request(thumb_url, headers={"User-Agent": "Tagicus/0.1.0"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = resp.read()
+            mime = resp.headers.get("Content-Type") or "image/jpeg"
+        if not data:
+            return None
+        return (mime, data)
+    except Exception:
+        return None

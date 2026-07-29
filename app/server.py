@@ -7,6 +7,7 @@ Access at http://mark3:8017
 
 import os
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
@@ -19,7 +20,7 @@ import scanner
 import tag_writer
 import paths
 
-app = FastAPI(title="Tagicus", version="0.1.0")
+app = FastAPI(title="Tagicus", version="0.2.0")
 
 # Initialize database on startup
 @app.on_event("startup")
@@ -43,11 +44,21 @@ class LibraryCreate(BaseModel):
     name: str
     path: str
 
+class BulkFieldUpdate(BaseModel):
+    song_ids: list[int]
+    field_name: str
+    value: str
+
+class GenreRename(BaseModel):
+    old_name: str
+    new_name: str
+
 # --- Scan state ---
 scan_status = {"running": False, "total": 0, "scanned": 0, "current": "", "cancel": False}
 
 # --- Apply-batch state ---
 apply_status = {"running": False, "total": 0, "applied": 0, "current": "", "errors": [], "cancel": False}
+apply_status_lock = threading.Lock()
 
 # --- Library Routes ---
 
@@ -100,6 +111,30 @@ def delete_song(song_id: int):
 @app.get("/api/duplicates")
 def get_duplicates():
     return db.find_duplicates()
+
+@app.get("/api/artist-stats")
+def get_artist_stats():
+    return db.get_artist_stats()
+
+@app.get("/api/genre-stats")
+def get_genre_stats():
+    return db.get_genre_stats()
+
+@app.post("/api/genre-stats/rename")
+def rename_genre(req: GenreRename):
+    if not req.old_name.strip() or not req.new_name.strip():
+        raise HTTPException(status_code=400, detail="Both genre names are required")
+    updated = db.rename_genre(req.old_name, req.new_name)
+    return {"updated": updated}
+
+@app.post("/api/songs/bulk-field")
+def bulk_update_field(req: BulkFieldUpdate):
+    valid = ["artist", "title", "album", "year", "track", "genre"]
+    if req.field_name not in valid:
+        raise HTTPException(status_code=400, detail=f"Invalid field: {req.field_name}")
+    for song_id in req.song_ids:
+        db.update_field(song_id, req.field_name, req.value)
+    return {"updated": len(req.song_ids)}
 
 @app.get("/api/stats")
 def get_stats():
@@ -164,15 +199,27 @@ def cancel_apply_batch():
     apply_status["cancel"] = True
     return {"message": "Cancelling apply"}
 
-def _run_apply_batch(songs, organize, base_path):
-    for song in songs:
-        if apply_status["cancel"]:
-            break
-        apply_status["current"] = song["filename"]
-        result = tag_writer.apply_tags(song["id"], organize=organize, base_path=base_path)
+def _apply_one(song, organize, base_path):
+    apply_status["current"] = song["filename"]
+    result = tag_writer.apply_tags(song["id"], organize=organize, base_path=base_path)
+    with apply_status_lock:
         if "error" in result:
             apply_status["errors"].append({"id": song["id"], "file": song["filename"], "error": result["error"]})
         apply_status["applied"] += 1
+
+
+def _run_apply_batch(songs, organize, base_path):
+    # Each song is a separate file, so writing several at once is safe -
+    # this is what was making a batch apply take hours: one song at a time,
+    # each one potentially waiting on a slow LRCLIB lyrics lookup.
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = []
+        for song in songs:
+            if apply_status["cancel"]:
+                break
+            futures.append(pool.submit(_apply_one, song, organize, base_path))
+        for f in futures:
+            f.result()
     apply_status["running"] = False
     apply_status["current"] = ""
     apply_status["cancel"] = False
@@ -297,7 +344,6 @@ def _run_scan(path):
     audio_files = sorted(set(audio_files))
     scan_status["total"] = len(audio_files)
 
-    import time
     for i, fp in enumerate(audio_files):
         scan_status["current"] = os.path.basename(fp)
         try:
@@ -307,8 +353,6 @@ def _run_scan(path):
         scan_status["scanned"] = i + 1
         if scan_status["cancel"]:
             break
-        if i < len(audio_files) - 1:
-            time.sleep(1)
 
     scan_status["running"] = False
     scan_status["current"] = ""

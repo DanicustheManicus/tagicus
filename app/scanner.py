@@ -6,6 +6,7 @@ Respects settings for which sources are enabled and review threshold.
 """
 
 import os, glob, time
+from concurrent.futures import ThreadPoolExecutor
 from thefuzz import fuzz
 from models import SourceResult
 from config import load_config, get_key
@@ -172,132 +173,92 @@ def _save_with_status(filepath, filename, results, votes, status):
     return song_id
 
 
+def _run_parallel(jobs):
+    """Run independent source lookups at the same time instead of one after
+    another. Each job is a zero-arg callable; a failing job is dropped
+    exactly like the old sequential try/except did, it just doesn't block
+    the others from running while it's in flight."""
+    if not jobs:
+        return []
+    results = []
+    with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
+        futures = [pool.submit(job) for job in jobs]
+        for f in futures:
+            try:
+                results.append(f.result())
+            except Exception:
+                pass
+    return results
+
+
 def _search_online(artist, title, mb_recording_id, discogs_token, config, settings):
     s = lambda k: settings.get(k) == "true"
     results = []
 
+    # These don't depend on each other's results, so they can all run at
+    # the same time instead of waiting on one another's network round-trip.
+    independent_jobs = []
     if s("source_musicbrainz") and (mb_recording_id or artist or title):
-        try:
-            results.append(lookup_musicbrainz(artist=artist, title=title, recording_id=mb_recording_id))
-        except Exception:
-            pass
-
+        independent_jobs.append(lambda: lookup_musicbrainz(artist=artist, title=title, recording_id=mb_recording_id))
     if discogs_token and (artist or title):
-        try:
-            results.append(lookup_discogs(artist=artist, title=title, token=discogs_token))
-        except Exception:
-            pass
-
+        independent_jobs.append(lambda: lookup_discogs(artist=artist, title=title, token=discogs_token))
     if s("source_deezer") and (artist or title):
-        try:
-            results.append(lookup_deezer(artist=artist, title=title))
-        except Exception:
-            pass
-
+        independent_jobs.append(lambda: lookup_deezer(artist=artist, title=title))
     if s("source_audiodb") and artist and title:
-        try:
-            results.append(lookup_audiodb(artist=artist, title=title))
-        except Exception:
-            pass
-
-    if s("source_wikidata") and artist:
-        try:
-            best_album = None
-            for r in results:
-                if r.album:
-                    best_album = r.album
-                    break
-            results.append(lookup_wikidata(artist=artist, title=title, album=best_album))
-        except Exception:
-            pass
-
-    # Genre-specific sources
+        independent_jobs.append(lambda: lookup_audiodb(artist=artist, title=title))
     if s("source_openopus") and artist:
-        try:
-            results.append(lookup_openopus(artist=artist, title=title))
-        except Exception:
-            pass
-
-    if s("source_vgmdb") and (artist or title):
-        try:
-            best_album = None
-            for r in results:
-                if r.album:
-                    best_album = r.album
-                    break
-            results.append(lookup_vgmdb(artist=artist, title=title, album=best_album))
-        except Exception:
-            pass
-
+        independent_jobs.append(lambda: lookup_openopus(artist=artist, title=title))
     if s("source_vocadb") and title:
-        try:
-            results.append(lookup_vocadb(artist=artist, title=title))
-        except Exception:
-            pass
-
+        independent_jobs.append(lambda: lookup_vocadb(artist=artist, title=title))
     if s("source_metallum") and title:
-        try:
-            results.append(lookup_metallum(artist=artist, title=title))
-        except Exception:
-            pass
+        independent_jobs.append(lambda: lookup_metallum(artist=artist, title=title))
+
+    results.extend(_run_parallel(independent_jobs))
+
+    best_album = None
+    for r in results:
+        if r.album:
+            best_album = r.album
+            break
+
+    # Wikidata and VGMdb want the album the sources above found, so they
+    # have to wait for that batch - but they can still run alongside
+    # each other instead of one after the other.
+    dependent_jobs = []
+    if s("source_wikidata") and artist:
+        dependent_jobs.append(lambda: lookup_wikidata(artist=artist, title=title, album=best_album))
+    if s("source_vgmdb") and (artist or title):
+        dependent_jobs.append(lambda: lookup_vgmdb(artist=artist, title=title, album=best_album))
+
+    results.extend(_run_parallel(dependent_jobs))
 
     return results
 
 
 def _search_online_local_path(artist, title, discogs_token, config, settings):
     s = lambda k: settings.get(k) == "true"
-    results = []
 
+    # Nothing here depends on another source's result, so all of them can
+    # run at the same time.
+    jobs = []
     if s("source_musicbrainz") and (artist or title):
-        try:
-            results.append(lookup_musicbrainz(artist=artist, title=title, recording_id=None))
-        except Exception:
-            pass
-
+        jobs.append(lambda: lookup_musicbrainz(artist=artist, title=title, recording_id=None))
     if discogs_token and (artist or title):
-        try:
-            results.append(lookup_discogs(artist=artist, title=title, token=discogs_token))
-        except Exception:
-            pass
-
+        jobs.append(lambda: lookup_discogs(artist=artist, title=title, token=discogs_token))
     if s("source_deezer") and (artist or title):
-        try:
-            results.append(lookup_deezer(artist=artist, title=title))
-        except Exception:
-            pass
-
+        jobs.append(lambda: lookup_deezer(artist=artist, title=title))
     if s("source_audiodb") and artist and title:
-        try:
-            results.append(lookup_audiodb(artist=artist, title=title))
-        except Exception:
-            pass
-
-    # Genre-specific sources (local path)
+        jobs.append(lambda: lookup_audiodb(artist=artist, title=title))
     if s("source_openopus") and artist:
-        try:
-            results.append(lookup_openopus(artist=artist, title=title))
-        except Exception:
-            pass
-
+        jobs.append(lambda: lookup_openopus(artist=artist, title=title))
     if s("source_vgmdb") and (artist or title):
-        try:
-            results.append(lookup_vgmdb(artist=artist, title=title))
-        except Exception:
-            pass
-
+        jobs.append(lambda: lookup_vgmdb(artist=artist, title=title))
     if s("source_vocadb") and title:
-        try:
-            results.append(lookup_vocadb(artist=artist, title=title))
-        except Exception:
-            pass
-
+        jobs.append(lambda: lookup_vocadb(artist=artist, title=title))
     if s("source_metallum") and title:
-        try:
-            results.append(lookup_metallum(artist=artist, title=title))
-        except Exception:
-            pass
+        jobs.append(lambda: lookup_metallum(artist=artist, title=title))
 
-    return results
+    return _run_parallel(jobs)
 
 
 def _pick_from_locals(local_results, field):
